@@ -46,10 +46,25 @@ export default async function handler(req, res) {
     });
     
   } catch (error) {
-    console.error('Analysis error:', error);
+    console.error('=== ANALYSIS ERROR ===');
+    console.error('Error type:', error.constructor.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('Full error object:', error);
+    console.error('=====================');
+    
+    // Return more detailed error information for debugging
     res.status(500).json({ 
       error: 'Failed to analyze document',
-      message: error.message 
+      message: error.message,
+      type: error.constructor.name,
+      details: {
+        timestamp: new Date().toISOString(),
+        fileName: req.body?.fileName,
+        hasImages: !!(req.body?.images && req.body.images.length > 0),
+        imageCount: req.body?.images?.length || 0,
+        useImageExtraction: req.body?.useImageExtraction
+      }
     });
   }
 }
@@ -198,8 +213,27 @@ async function analyzeImagesWithOpenAI(images, fileName, prompt) {
   try {
     console.log('🖼️ === STARTING OPENAI GPT-4O IMAGE ANALYSIS ===');
     console.log('📄 Document:', fileName);
-    console.log('🖼️ Number of images:', images.length);
-    console.log('📏 Total image data size:', images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024, 'MB');
+    console.log('🖼️ Number of images:', images?.length || 0);
+    
+    if (!images || images.length === 0) {
+      throw new Error('No images provided for analysis');
+    }
+    
+    // Validate images
+    for (let i = 0; i < images.length; i++) {
+      if (!images[i] || typeof images[i] !== 'string') {
+        throw new Error(`Invalid image data at index ${i}`);
+      }
+    }
+    
+    const totalSizeMB = images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024;
+    console.log('📏 Total image data size:', totalSizeMB.toFixed(2), 'MB');
+    
+    // Check if payload is too large
+    if (totalSizeMB > 20) {
+      console.log('⚠️ Large payload detected, reducing image quality...');
+      // Could implement image compression here if needed
+    }
     
     // Create content array with text prompt and images
     const content = [

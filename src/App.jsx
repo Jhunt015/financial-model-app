@@ -697,14 +697,14 @@ const processPDFFile = async (file, setProgress) => {
     console.log(`PDF loaded: ${pdf.numPages} pages`);
     
     const images = [];
-    const maxPages = Math.min(pdf.numPages, 10); // Limit to first 10 pages for performance
+    const maxPages = Math.min(pdf.numPages, 5); // Limit to first 5 pages to reduce payload size
     
     // Convert each page to image
     for (let i = 1; i <= maxPages; i++) {
       console.log(`Converting page ${i}/${maxPages} to image...`);
       
       const page = await pdf.getPage(i);
-      const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better quality
+      const viewport = page.getViewport({ scale: 1.5 }); // Reduced scale to balance quality vs size
       
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
@@ -716,9 +716,12 @@ const processPDFFile = async (file, setProgress) => {
         viewport: viewport 
       }).promise;
       
-      // Convert to JPEG with compression for smaller size
-      const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+      // Convert to JPEG with higher compression for smaller size
+      const base64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
       images.push(base64);
+      
+      // Log individual image size
+      console.log(`Page ${i} image size: ${(base64.length / 1024 / 1024).toFixed(2)} MB`);
       
       // Show progress
       if (setProgress) {
@@ -727,10 +730,21 @@ const processPDFFile = async (file, setProgress) => {
     }
     
     console.log(`Converted ${images.length} pages to images`);
-    console.log(`Total image data size: ${images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024} MB`);
+    const totalSizeMB = images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024;
+    console.log(`Total image data size: ${totalSizeMB.toFixed(2)} MB`);
+    
+    // Check if payload is too large for Vercel
+    if (totalSizeMB > 10) {
+      console.log('⚠️ Image payload too large, falling back to text extraction...');
+      throw new Error('Image payload too large, using text extraction');
+    }
     
     // Now send images to API for extraction
     console.log('Sending images to API for extraction...');
+    
+    if (setProgress) {
+      setProgress(75); // Progress for API call
+    }
     
     const response = await analyzePDFWithImages(file, images);
     
@@ -738,8 +752,63 @@ const processPDFFile = async (file, setProgress) => {
     
   } catch (error) {
     console.error('PDF processing error:', error);
-    // Fall back to server-side text extraction
+    
+    // If it's a size issue, try text extraction as fallback
+    if (error.message.includes('too large') || error.message.includes('payload')) {
+      console.log('📄 Falling back to text-based extraction...');
+      try {
+        const response = await analyzeDocumentWithTextExtraction(file);
+        return response;
+      } catch (fallbackError) {
+        console.error('Text extraction fallback also failed:', fallbackError);
+        throw new Error(`Both image and text extraction failed: ${fallbackError.message}`);
+      }
+    }
+    
     throw new Error(`PDF processing failed: ${error.message}`);
+  }
+};
+
+// Text extraction fallback function
+const analyzeDocumentWithTextExtraction = async (file) => {
+  const apiUrl = import.meta.env.VITE_API_URL || '/api/analyze-document';
+  
+  try {
+    // Convert file to base64
+    const fileBase64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fileName: file.name,
+        file: fileBase64,
+        useImageExtraction: false,
+        prompt: `Analyze this business document for financial data and key information. Focus on extracting revenue, EBITDA, purchase price, and business details.`
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.success && result.data) {
+      return processAPIResponse(result.data, file);
+    } else {
+      throw new Error(result.error || 'Failed to analyze document');
+    }
+  } catch (error) {
+    console.error('Text extraction error:', error);
+    throw error;
   }
 };
 
