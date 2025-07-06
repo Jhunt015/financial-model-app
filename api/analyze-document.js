@@ -1,5 +1,6 @@
 import { config } from 'dotenv';
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.js';
+import pdf from 'pdf-parse';
+import PDFParser from 'pdf2json';
 
 // Load environment variables
 config({ path: '.env.local' });
@@ -46,42 +47,92 @@ export default async function handler(req, res) {
   }
 }
 
-async function extractTextWithPDFJS(fileBuffer) {
+async function extractTextWithStructuredParser(fileBuffer) {
   try {
-    // Load PDF document
-    const pdfDocument = await pdfjs.getDocument({
-      data: fileBuffer,
-      useSystemFonts: true,
-      verbosity: 0
-    }).promise;
+    console.log('📄 Starting structured PDF text extraction...');
     
-    console.log('📄 PDF loaded successfully. Pages:', pdfDocument.numPages);
+    let extractedText = '';
+    let pdfData = null;
     
-    let fullText = '';
-    
-    // Extract text from each page
-    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
-      const page = await pdfDocument.getPage(pageNum);
-      const textContent = await page.getTextContent();
+    // Try pdf-parse first
+    try {
+      pdfData = await pdf(fileBuffer);
+      extractedText = pdfData.text;
+      console.log('✅ pdf-parse extraction successful');
+    } catch (parseError) {
+      console.log('⚠️ pdf-parse failed, trying pdf2json...', parseError.message);
       
-      // Combine all text items from the page
-      let pageText = '';
-      for (const item of textContent.items) {
-        if (item.str) {
-          pageText += item.str + ' ';
-        }
-      }
+      // Fallback to pdf2json
+      const pdfParser = new PDFParser();
       
-      console.log(`📃 Page ${pageNum} text length:`, pageText.length);
-      console.log(`📃 Page ${pageNum} preview:`, pageText.substring(0, 200));
+      extractedText = await new Promise((resolve, reject) => {
+        pdfParser.on('pdfParser_dataError', errData => reject(errData.parserError));
+        pdfParser.on('pdfParser_dataReady', pdfData => {
+          let text = '';
+          pdfData.Pages.forEach(page => {
+            page.Texts.forEach(textItem => {
+              textItem.R.forEach(r => {
+                if (r.T) {
+                  text += decodeURIComponent(r.T) + ' ';
+                }
+              });
+            });
+            text += '\n\n';
+          });
+          resolve(text);
+        });
+        
+        pdfParser.parseBuffer(fileBuffer);
+      });
       
-      fullText += `\n\n--- Page ${pageNum} ---\n${pageText}`;
+      console.log('✅ pdf2json extraction successful');
     }
     
-    console.log('✅ PDF.js extraction complete. Total text length:', fullText.length);
-    return fullText;
+    console.log('📝 Raw text length:', extractedText.length, 'characters');
+    if (pdfData) {
+      console.log('📄 Number of pages:', pdfData.numpages);
+      console.log('📊 PDF metadata:', pdfData.info);
+    }
+    
+    // Clean and structure the text for better financial data extraction
+    extractedText = extractedText
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/([a-z])([A-Z])/g, '$1 $2') // Add space between camelCase
+      .replace(/\$\s+/g, '$') // Fix currency formatting
+      .replace(/(\d)\s+(\d{3})/g, '$1$2') // Fix number formatting
+      .replace(/\s*\n\s*/g, '\n') // Clean up newlines
+      .trim();
+    
+    console.log('🔍 First 1000 chars of cleaned text:', extractedText.substring(0, 1000));
+    console.log('📊 Looking for financial indicators...');
+    
+    // Look for financial data patterns
+    const revenueMatch = extractedText.match(/revenue[^\d]*(\$?[\d,]+(?:\.\d+)?(?:[MmKk])?)/gi);
+    const ebitdaMatch = extractedText.match(/ebitda[^\d]*(\$?[\d,]+(?:\.\d+)?(?:[MmKk])?)/gi);
+    const yearMatches = extractedText.match(/20\d{2}/g);
+    
+    console.log('💰 Revenue indicators found:', revenueMatch);
+    console.log('💵 EBITDA indicators found:', ebitdaMatch);
+    console.log('📅 Years found:', yearMatches);
+    
+    // Enhanced extraction with table detection
+    const lines = extractedText.split('\n');
+    console.log('📑 Total lines:', lines.length);
+    
+    // Log lines that might contain financial data
+    lines.forEach((line, index) => {
+      if (line.match(/\$[\d,]+|\d{4}.*\d{4}|revenue|ebitda|income|profit|cash/i)) {
+        console.log(`Line ${index}: ${line}`);
+      }
+    });
+    
+    console.log('\n🔍 === FULL EXTRACTED TEXT ===');
+    console.log(extractedText);
+    console.log('=== END OF EXTRACTED TEXT ===\n');
+    
+    return extractedText;
   } catch (error) {
-    console.error('❌ PDF.js extraction failed:', error);
+    console.error('❌ PDF extraction failed:', error);
     throw new Error(`Failed to extract text from PDF: ${error.message}`);
   }
 }
@@ -98,8 +149,8 @@ async function analyzeWithOpenAI(fileBuffer, fileName, prompt) {
     console.log('📄 Extracting text from PDF using PDF.js...');
     console.log('📏 PDF file size:', fileBuffer.length, 'bytes');
     
-    // Extract text from PDF using PDF.js
-    const extractedText = await extractTextWithPDFJS(fileBuffer);
+    // Extract text from PDF with enhanced parsing
+    const extractedText = await extractTextWithStructuredParser(fileBuffer);
     
     console.log('📝 Extracted text length:', extractedText.length, 'characters');
     console.log('🔍 First 500 chars:', extractedText.substring(0, 500));
