@@ -1,4 +1,5 @@
 import { config } from 'dotenv';
+import pdf from 'pdf-parse';
 
 // Load environment variables
 config({ path: '.env.local' });
@@ -29,7 +30,7 @@ export default async function handler(req, res) {
     // Convert base64 file to buffer
     const fileBuffer = Buffer.from(file, 'base64');
     
-    const analysisResult = await analyzeWithClaude(fileBuffer, fileName, prompt);
+    const analysisResult = await analyzeWithOpenAI(fileBuffer, fileName, prompt);
     
     res.json({
       success: true,
@@ -45,73 +46,74 @@ export default async function handler(req, res) {
   }
 }
 
-async function analyzeWithClaude(fileBuffer, fileName, prompt) {
-  if (!process.env.CLAUDE_API_KEY) {
-    throw new Error('Claude API key not configured. Please add CLAUDE_API_KEY to your environment variables.');
+async function analyzeWithOpenAI(fileBuffer, fileName, prompt) {
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  
+  if (!openaiApiKey) {
+    throw new Error('OpenAI API key not configured. Please add OPENAI_API_KEY to your environment variables.');
   }
 
   try {
-    console.log('Sending PDF directly to Claude API...');
-    console.log('API Key available:', !!process.env.CLAUDE_API_KEY);
+    console.log('Extracting text from PDF...');
     console.log('PDF file size:', fileBuffer.length, 'bytes');
     
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // Extract text from PDF
+    const pdfData = await pdf(fileBuffer);
+    const extractedText = pdfData.text;
+    
+    console.log('Extracted text length:', extractedText.length, 'characters');
+    console.log('First 500 chars:', extractedText.substring(0, 500));
+    
+    // Send to OpenAI GPT-4o
+    console.log('Sending to OpenAI GPT-4o...');
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.CLAUDE_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'anthropic-beta': 'pdfs-2024-09-25'
+        'Authorization': `Bearer ${openaiApiKey}`
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 8000,
+        model: 'gpt-4o',
         messages: [{
           role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: prompt
-            },
-            {
-              type: 'text',
-              text: `Please analyze this PDF document. The PDF content is provided as base64: ${fileBuffer.toString('base64')}`
-            }
-          ]
-        }]
+          content: `${prompt}\n\nDocument content extracted from "${fileName}":\n\n${extractedText}`
+        }],
+        max_tokens: 8000,
+        temperature: 0.1
       })
     });
     
-    console.log('Claude API response status:', response.status);
+    console.log('OpenAI API response status:', response.status);
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Claude API error response:', errorText);
-      throw new Error(`Claude API request failed (${response.status}): ${errorText}`);
+      console.error('OpenAI API error response:', errorText);
+      throw new Error(`OpenAI API request failed (${response.status}): ${errorText}`);
     }
     
     const result = await response.json();
     
     if (result.error) {
-      throw new Error(`Claude API error: ${result.error.message || 'Unknown error'}`);
+      throw new Error(`OpenAI API error: ${result.error.message || 'Unknown error'}`);
     }
     
-    if (!result.content || !result.content[0] || !result.content[0].text) {
-      throw new Error('Invalid response format from Claude API');
+    if (!result.choices || !result.choices[0] || !result.choices[0].message || !result.choices[0].message.content) {
+      throw new Error('Invalid response format from OpenAI API');
     }
     
-    console.log('Claude API raw response:', result.content[0].text);
+    const responseText = result.choices[0].message.content;
+    console.log('OpenAI API raw response:', responseText);
     
     try {
-      const parsedResult = JSON.parse(result.content[0].text);
+      const parsedResult = JSON.parse(responseText);
       console.log('Parsed JSON result:', JSON.stringify(parsedResult, null, 2));
       console.log('Purchase price from response:', parsedResult.purchasePrice);
       console.log('Quick stats from response:', parsedResult.quickStats);
       return parsedResult;
     } catch (parseError) {
       // If JSON parsing fails, try to extract JSON from the response
-      const text = result.content[0].text;
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         try {
           return JSON.parse(jsonMatch[0]);
@@ -119,10 +121,10 @@ async function analyzeWithClaude(fileBuffer, fileName, prompt) {
           throw new Error(`Failed to parse extracted JSON: ${e.message}`);
         }
       }
-      throw new Error(`Failed to parse Claude response as JSON: ${parseError.message}. Response was: ${text}`);
+      throw new Error(`Failed to parse OpenAI response as JSON: ${parseError.message}. Response was: ${responseText}`);
     }
   } catch (error) {
-    console.error('Claude API error details:', {
+    console.error('OpenAI API error details:', {
       message: error.message,
       stack: error.stack,
       name: error.name,
@@ -130,7 +132,7 @@ async function analyzeWithClaude(fileBuffer, fileName, prompt) {
     });
     
     if (error.message.includes('fetch')) {
-      throw new Error(`Network error connecting to Claude API: ${error.message}. Please check your internet connection and try again.`);
+      throw new Error(`Network error connecting to OpenAI API: ${error.message}. Please check your internet connection and try again.`);
     }
     
     throw error;

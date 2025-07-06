@@ -71,6 +71,93 @@ const calculateIRR = (cashFlows, initialInvestment) => {
   return rate;
 };
 
+// Exit Value Input Modal Component
+function ExitValueModal({ isOpen, onClose, onConfirm, suggestedValue, exitMultiple, exitYear, businessType }) {
+  const [exitValue, setExitValue] = useState(suggestedValue || 0);
+  const [customValue, setCustomValue] = useState('');
+
+  useEffect(() => {
+    if (suggestedValue) {
+      setExitValue(suggestedValue);
+    }
+  }, [suggestedValue]);
+
+  const handleConfirm = () => {
+    const finalValue = customValue ? parseInt(customValue.replace(/,/g, '')) : exitValue;
+    onConfirm(finalValue);
+    onClose();
+  };
+
+  const handleCustomValueChange = (e) => {
+    const value = e.target.value.replace(/[^\d]/g, '');
+    const formatted = value.replace(/\B(?=(\d{3})+(?!\\d))/g, ',');
+    setCustomValue(formatted);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full">
+        <h3 className="text-lg font-semibold mb-4">Set Exit Value</h3>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Auto-Calculated Exit Value
+            </label>
+            <div className="p-3 bg-blue-50 rounded border">
+              <div className="font-medium text-blue-900">
+                {formatCurrency(suggestedValue)}
+              </div>
+              <div className="text-sm text-blue-600">
+                Year {exitYear} @ {exitMultiple}x {businessType === 'insurance_agency' ? 'Commission Income' : 
+                businessType === 'saas' ? 'ARR' : 
+                businessType === 'professional_services' || businessType === 'retail' || businessType === 'restaurant' ? 'Revenue' : 'EBITDA'}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Custom Exit Value (Optional)
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+              <input
+                type="text"
+                value={customValue}
+                onChange={handleCustomValueChange}
+                placeholder="Enter custom value"
+                className="w-full pl-6 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="text-xs text-gray-500">
+            The exit value is automatically calculated based on industry standards. You can override this with a custom value if you have specific knowledge about the business's exit potential.
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Purchase Price Input Modal Component
 function PurchasePriceModal({ isOpen, onClose, onConfirm, suggestedPrice, estimationMethod, businessType }) {
   const [purchasePrice, setPurchasePrice] = useState(suggestedPrice || 0);
@@ -1600,7 +1687,7 @@ const buildDebtServiceModel = (data, assumptions) => {
 };
 
 // Build 5-Year Financial Model
-const buildFiveYearModel = (baseData, debtModel, inputs) => {
+const buildFiveYearModel = (baseData, debtModel, inputs, customExitValue = null) => {
   const baseRevenue = baseData.statements.incomeStatement?.revenue['TTM'] || 0;
   const years = [1, 2, 3, 4, 5];
   const revenue = [];
@@ -1720,42 +1807,52 @@ const buildFiveYearModel = (baseData, debtModel, inputs) => {
     dscr.push(yearDSCR);
   }
   
-  // Calculate exit value using dynamic business type-specific logic
+  // Calculate exit value using custom value or dynamic business type-specific logic
   const exitYearIndex = Math.min(inputs.exitYear - 1, 4);
   const exitEBITDA = ebitda[exitYearIndex];
   const exitRevenue = revenue[exitYearIndex];
   
-  // Get business type from the model assumptions or detect it
-  const businessTypeStr = businessType.type || 'general_business';
-  const exitModel = getExitValuationModel(businessTypeStr);
-  
   let exitValue = 0;
-  let exitMultiple = exitModel.multiple;
-  let exitMethod = exitModel.display;
+  let exitMultiple = 0;
+  let exitMethod = '';
   
-  if (exitModel.metric === 'commission_income' && exitRevenue > 0) {
-    // Insurance agencies - use revenue as commission income proxy
-    exitValue = exitRevenue * exitMultiple;
-  } else if (exitModel.metric === 'arr' && exitRevenue > 0) {
-    // SaaS - use revenue as ARR proxy
-    exitValue = exitRevenue * exitMultiple;
-  } else if (exitModel.metric === 'ebitda' && exitEBITDA > 0) {
-    // Most businesses - use EBITDA
-    exitValue = exitEBITDA * exitMultiple;
-  } else if (exitModel.metric === 'revenue' && exitRevenue > 0) {
-    // Revenue-based businesses
-    exitValue = exitRevenue * exitMultiple;
-  } else if (exitEBITDA > 0) {
-    // Fallback to EBITDA with default multiple
-    exitValue = exitEBITDA * exitMultiple;
-    exitMethod = `${exitMultiple}x EBITDA`;
-  } else if (exitRevenue > 0) {
-    // Final fallback to revenue
-    exitValue = exitRevenue * (exitMultiple * 0.3); // Conservative revenue multiple
-    exitMethod = `${(exitMultiple * 0.3).toFixed(1)}x Revenue`;
+  if (customExitValue && customExitValue > 0) {
+    // Use custom exit value
+    exitValue = customExitValue;
+    exitMethod = 'Custom Value';
+    exitMultiple = exitEBITDA > 0 ? customExitValue / exitEBITDA : 0;
   } else {
-    exitValue = 0;
-    exitMethod = 'No exit value - insufficient data';
+    // Get business type from the model assumptions or detect it
+    const businessTypeStr = businessType.type || 'general_business';
+    const exitModel = getExitValuationModel(businessTypeStr);
+    
+    exitMultiple = exitModel.multiple;
+    exitMethod = exitModel.display;
+    
+    if (exitModel.metric === 'commission_income' && exitRevenue > 0) {
+      // Insurance agencies - use revenue as commission income proxy
+      exitValue = exitRevenue * exitMultiple;
+    } else if (exitModel.metric === 'arr' && exitRevenue > 0) {
+      // SaaS - use revenue as ARR proxy
+      exitValue = exitRevenue * exitMultiple;
+    } else if (exitModel.metric === 'ebitda' && exitEBITDA > 0) {
+      // Most businesses - use EBITDA
+      exitValue = exitEBITDA * exitMultiple;
+    } else if (exitModel.metric === 'revenue' && exitRevenue > 0) {
+      // Revenue-based businesses
+      exitValue = exitRevenue * exitMultiple;
+    } else if (exitEBITDA > 0) {
+      // Fallback to EBITDA with default multiple
+      exitValue = exitEBITDA * exitMultiple;
+      exitMethod = `${exitMultiple}x EBITDA`;
+    } else if (exitRevenue > 0) {
+      // Final fallback to revenue
+      exitValue = exitRevenue * (exitMultiple * 0.3); // Conservative revenue multiple
+      exitMethod = `${(exitMultiple * 0.3).toFixed(1)}x Revenue`;
+    } else {
+      exitValue = 0;
+      exitMethod = 'No exit value - insufficient data';
+    }
   }
   
   // Create cash flows array up to exit year
@@ -2672,6 +2769,9 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
   );
 
   const [flashMessage, setFlashMessage] = useState('');
+  const [customExitValue, setCustomExitValue] = useState(null);
+  const [isExitValueModalOpen, setIsExitValueModalOpen] = useState(false);
+  const [isUsingCustomExitValue, setIsUsingCustomExitValue] = useState(false);
 
   // Update inputs when model changes (e.g., when purchase price is updated)
   useEffect(() => {
@@ -2692,15 +2792,15 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
     console.log('Updated inputs:', updatedInputs);
     setInputs(updatedInputs);
     
-    const newModel = buildFiveYearModel(financialData, model, updatedInputs);
+    const newModel = buildFiveYearModel(financialData, model, updatedInputs, customExitValue);
     console.log('New 5-year model debt service:', newModel.debtService);
     setFiveYearModel(newModel);
-  }, [model]);
+  }, [model, customExitValue]);
 
   const handleInputChange = (field, value) => {
     const newInputs = { ...inputs, [field]: value };
     setInputs(newInputs);
-    const newModel = buildFiveYearModel(financialData, model, newInputs);
+    const newModel = buildFiveYearModel(financialData, model, newInputs, customExitValue);
     setFiveYearModel(newModel);
   };
 
@@ -2712,6 +2812,24 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
     onSave(fiveYearModel, inputs);
     setFlashMessage('Saved to my models');
     setTimeout(() => setFlashMessage(''), 3000);
+  };
+
+  // Exit Value Modal Handlers
+  const handleExitValueClick = () => {
+    setIsExitValueModalOpen(true);
+  };
+
+  const handleExitValueConfirm = (newExitValue) => {
+    setCustomExitValue(newExitValue);
+    setIsUsingCustomExitValue(true);
+    
+    // Rebuild the model with the new custom exit value
+    const newModel = buildFiveYearModel(financialData, model, inputs, newExitValue);
+    setFiveYearModel(newModel);
+  };
+
+  const handleExitValueClose = () => {
+    setIsExitValueModalOpen(false);
   };
 
   const handleExcelDownload = () => {
@@ -2889,9 +3007,20 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
               <p className="text-sm mt-1 opacity-90">Years to Recovery</p>
             </div>
             <div className="bg-white/20 backdrop-blur-sm rounded-lg p-6">
-              <h3 className="text-sm font-bold uppercase tracking-wide mb-2">Exit Value</h3>
+              <div className="flex justify-between items-start mb-2">
+                <h3 className="text-sm font-bold uppercase tracking-wide">Exit Value</h3>
+                <button
+                  onClick={handleExitValueClick}
+                  className="text-white/80 hover:text-white text-sm flex items-center"
+                >
+                  <Edit3 className="h-3 w-3 mr-1" />
+                  Edit
+                </button>
+              </div>
               <p className="text-3xl font-bold">{formatCurrency(fiveYearModel.exitValue)}</p>
-              <p className="text-sm mt-1 opacity-90">Year {inputs.exitYear} @ {fiveYearModel.exitMultiple?.toFixed(1) || 3.0}x EBITDA</p>
+              <p className="text-sm mt-1 opacity-90">
+                {customExitValue > 0 ? 'Custom' : `Year ${inputs.exitYear} @ ${fiveYearModel.exitMultiple?.toFixed(1) || 3.0}x EBITDA`}
+              </p>
             </div>
           </div>
         </div>
@@ -2911,17 +3040,19 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
                   <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Investment Structure</h4>
                   
                   {/* Down Payment */}
-                  <div className="group relative mb-4">
+                  <div className="mb-4">
                     <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
                       <span className="flex items-center space-x-1">
                         <span>Down Payment %</span>
-                        <span className="text-gray-400 cursor-help">ⓘ</span>
+                        <div className="group relative">
+                          <span className="text-gray-400 cursor-help">ⓘ</span>
+                          <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg left-0 top-5">
+                            Your equity investment. SBA loans require 10-15% down. Conventional loans: 20-30%.
+                          </div>
+                        </div>
                       </span>
                       <span className="text-green-600 font-bold">{formatPercent(inputs.downPaymentPercent)}</span>
                     </label>
-                    <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg -mt-2">
-                      Your equity investment. SBA loans require 10-15% down. Conventional loans: 20-30%.
-                    </div>
                     <input
                       type="range"
                       min="0"
@@ -2937,17 +3068,19 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
                   </div>
 
                   {/* Interest Rate */}
-                  <div className="group relative mb-4">
+                  <div className="mb-4">
                     <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
                       <span className="flex items-center space-x-1">
                         <span>Interest Rate</span>
-                        <span className="text-gray-400 cursor-help">ⓘ</span>
+                        <div className="group relative">
+                          <span className="text-gray-400 cursor-help">ⓘ</span>
+                          <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg left-0 top-5">
+                            Annual interest rate on debt. Current SBA rates: 11-13%. Bank loans: 8-12%.
+                          </div>
+                        </div>
                       </span>
                       <span className="text-green-600 font-bold">{formatPercent(inputs.interestRate)}</span>
                     </label>
-                    <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg -mt-2">
-                      Annual interest rate on debt. Current SBA rates: 11-13%. Bank loans: 8-12%.
-                    </div>
                     <input
                       type="range"
                       min="0.06"
@@ -2960,17 +3093,19 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
                   </div>
 
                   {/* Loan Term */}
-                  <div className="group relative">
+                  <div>
                     <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
                       <span className="flex items-center space-x-1">
                         <span>Loan Term</span>
-                        <span className="text-gray-400 cursor-help">ⓘ</span>
+                        <div className="group relative">
+                          <span className="text-gray-400 cursor-help">ⓘ</span>
+                          <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg left-0 top-5">
+                            Repayment period. SBA loans: up to 10 years. Longer terms = lower payments but more interest.
+                          </div>
+                        </div>
                       </span>
                       <span className="text-green-600 font-bold">{inputs.loanTermYears} years</span>
                     </label>
-                    <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg -mt-2">
-                      Repayment period. SBA loans: up to 10 years. Longer terms = lower payments but more interest.
-                    </div>
                     <input
                       type="range"
                       min="5"
@@ -2988,17 +3123,19 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
                   <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Operations</h4>
                   
                   {/* Revenue Growth */}
-                  <div className="group relative mb-4">
+                  <div className="mb-4">
                     <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
                       <span className="flex items-center space-x-1">
                         <span>Revenue Growth Rate</span>
-                        <span className="text-gray-400 cursor-help">ⓘ</span>
+                        <div className="group relative">
+                          <span className="text-gray-400 cursor-help">ⓘ</span>
+                          <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg left-0 top-5">
+                            Annual revenue growth rate. Industry average is 5-15%. Higher growth typically requires investment in sales, marketing, or capacity.
+                          </div>
+                        </div>
                       </span>
                       <span className="text-green-600 font-bold">{formatPercent(inputs.revenueGrowthRate)}</span>
                     </label>
-                    <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg -mt-2">
-                      Annual revenue growth rate. Industry average is 5-15%. Higher growth typically requires investment in sales, marketing, or capacity.
-                    </div>
                     <input
                       type="range"
                       min="0"
@@ -3011,17 +3148,19 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
                   </div>
 
                   {/* Gross Margin */}
-                  <div className="group relative mb-4">
+                  <div className="mb-4">
                     <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
                       <span className="flex items-center space-x-1">
                         <span>Gross Margin %</span>
-                        <span className="text-gray-400 cursor-help">ⓘ</span>
+                        <div className="group relative">
+                          <span className="text-gray-400 cursor-help">ⓘ</span>
+                          <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg left-0 top-5">
+                            Revenue minus direct costs (COGS). Service businesses: 40-50%. Manufacturing: 20-35%. Software: 70-90%.
+                          </div>
+                        </div>
                       </span>
                       <span className="text-green-600 font-bold">{formatPercent(inputs.grossMarginPercent)}</span>
                     </label>
-                    <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg -mt-2">
-                      Revenue minus direct costs (COGS). Service businesses: 40-50%. Manufacturing: 20-35%. Software: 70-90%.
-                    </div>
                     <input
                       type="range"
                       min="0.15"
@@ -3034,17 +3173,19 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
                   </div>
 
                   {/* Operating Expenses */}
-                  <div className="group relative">
+                  <div>
                     <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
                       <span className="flex items-center space-x-1">
                         <span>Operating Expenses %</span>
-                        <span className="text-gray-400 cursor-help">ⓘ</span>
+                        <div className="group relative">
+                          <span className="text-gray-400 cursor-help">ⓘ</span>
+                          <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg left-0 top-5">
+                            SG&A expenses as % of revenue. Includes salaries, rent, insurance, marketing. Well-run SMBs: 15-25%.
+                          </div>
+                        </div>
                       </span>
                       <span className="text-green-600 font-bold">{formatPercent(inputs.opexPercent)}</span>
                     </label>
-                    <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg -mt-2">
-                      SG&A expenses as % of revenue. Includes salaries, rent, insurance, marketing. Well-run SMBs: 15-25%.
-                    </div>
                     <input
                       type="range"
                       min="0.10"
@@ -3062,17 +3203,19 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
                   <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Exit and Other</h4>
 
                   {/* Exit Year */}
-                  <div className="group relative mb-4">
+                  <div className="mb-4">
                     <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
                       <span className="flex items-center space-x-1">
                         <span>Exit Year</span>
-                        <span className="text-gray-400 cursor-help">ⓘ</span>
+                        <div className="group relative">
+                          <span className="text-gray-400 cursor-help">ⓘ</span>
+                          <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg left-0 top-5">
+                            When you plan to sell the business. Most SMB buyers hold for 3-7 years.
+                          </div>
+                        </div>
                       </span>
                       <span className="text-green-600 font-bold">Year {inputs.exitYear}</span>
                     </label>
-                    <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg -mt-2">
-                      When you plan to sell the business. Most SMB buyers hold for 3-7 years.
-                    </div>
                     <input
                       type="range"
                       min="3"
@@ -3085,17 +3228,19 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
                   </div>
 
                   {/* Exit Multiple - Now Calculated Based on Business Type */}
-                  <div className="group relative mb-4">
+                  <div className="mb-4">
                     <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
                       <span className="flex items-center space-x-1">
                         <span>Exit Multiple</span>
-                        <span className="text-gray-400 cursor-help">ⓘ</span>
+                        <div className="group relative">
+                          <span className="text-gray-400 cursor-help">ⓘ</span>
+                          <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg left-0 top-5">
+                            Exit multiple automatically calculated based on business type and industry benchmarks. Insurance brokerages: 3.5x, Technology: 5.0x, Services: 3.0x EBITDA.
+                          </div>
+                        </div>
                       </span>
                       <span className="text-green-600 font-bold">{fiveYearModel.exitMultiple?.toFixed(1) || 3.0}x</span>
                     </label>
-                    <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg -mt-2">
-                      Exit multiple automatically calculated based on business type and industry benchmarks. Insurance brokerages: 3.5x, Technology: 5.0x, Services: 3.0x EBITDA.
-                    </div>
                     <div className="w-full p-3 bg-gray-100 rounded-lg border">
                       <p className="text-sm text-gray-600">
                         <span className="font-medium">Auto-calculated:</span> {fiveYearModel.exitMultiple?.toFixed(1) || 3.0}x EBITDA
@@ -3107,17 +3252,19 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
                   </div>
 
                   {/* Tax Rate */}
-                  <div className="group relative">
+                  <div>
                     <label className="flex justify-between text-sm font-medium text-gray-700 mb-2">
                       <span className="flex items-center space-x-1">
                         <span>Tax Rate</span>
-                        <span className="text-gray-400 cursor-help">ⓘ</span>
+                        <div className="group relative">
+                          <span className="text-gray-400 cursor-help">ⓘ</span>
+                          <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg left-0 top-5">
+                            Effective tax rate. Federal corporate rate is 21%, plus state taxes typically 3-8%.
+                          </div>
+                        </div>
                       </span>
                       <span className="text-green-600 font-bold">{formatPercent(inputs.taxRate)}</span>
                     </label>
-                    <div className="hidden group-hover:block absolute z-20 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg -mt-2">
-                      Effective tax rate. Federal corporate rate is 21%, plus state taxes typically 3-8%.
-                    </div>
                     <input
                       type="range"
                       min="0.15"
@@ -3451,6 +3598,18 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
           </div>
         </div>
       </div>
+      
+      {/* Exit Value Modal */}
+      <ExitValueModal
+        isOpen={isExitValueModalOpen}
+        onClose={handleExitValueClose}
+        onConfirm={handleExitValueConfirm}
+        suggestedValue={fiveYearModel.exitValue}
+        exitMultiple={inputs.exitMultiple}
+        exitYear={inputs.exitYear}
+        businessType={model.businessType}
+      />
+      
     </div>
   );
 }
