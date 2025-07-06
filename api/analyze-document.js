@@ -1,10 +1,5 @@
-import { config } from 'dotenv';
-import pdf from 'pdf-parse';
-import PDFParser from 'pdf2json';
-import { PDFDocument } from 'pdf-lib';
-
-// Load environment variables
-config({ path: '.env.local' });
+// Simplified imports to avoid module loading issues
+// Remove dotenv import since Vercel handles environment variables automatically
 
 export default async function handler(req, res) {
   try {
@@ -56,13 +51,11 @@ export default async function handler(req, res) {
       // Use image-based extraction for better accuracy
       console.log(`🖼️ Using image-based extraction with ${images.length} pages`);
       analysisResult = await analyzeImagesWithOpenAI(images, fileName, prompt);
-    } else if (file) {
-      // Fall back to text extraction
-      console.log('📄 Using text-based extraction');
-      const fileBuffer = Buffer.from(file, 'base64');
-      analysisResult = await analyzeWithOpenAI(fileBuffer, fileName, prompt);
     } else {
-      return res.status(400).json({ error: 'No file or images provided' });
+      return res.status(400).json({ 
+        error: 'No images provided', 
+        message: 'This API version requires image-based extraction' 
+      });
     }
     
     res.json({
@@ -109,6 +102,8 @@ export default async function handler(req, res) {
   }
 }
 
+// Removed unused text extraction functions to prevent import issues
+/*
 async function extractTextWithStructuredParser(fileBuffer) {
   try {
     console.log('📄 Starting structured PDF text extraction...');
@@ -275,11 +270,58 @@ async function analyzeImagesWithOpenAI(images, fileName, prompt) {
       // Could implement image compression here if needed
     }
     
-    // Create content array with text prompt and images
+    // Enhanced financial extraction prompt
+    const financialPrompt = `You are a financial analyst examining a Confidential Information Memorandum (CIM) for business acquisition. Extract ALL financial data, business information, and investment details from these document images.
+
+CRITICAL INSTRUCTIONS:
+1. **Financial Tables**: Look for income statements, P&L data, historical financials
+2. **Key Metrics**: Extract Revenue, EBITDA, Adjusted EBITDA, SDE, Net Income, Cash Flow
+3. **Years**: Common periods are 2021, 2022, 2023, TTM (Trailing Twelve Months)
+4. **Purchase Price**: Look for asking price, valuation, enterprise value, investment amount
+5. **Business Details**: Company name, industry, location, employee count, business description
+
+FINANCIAL DATA FORMAT - Return this exact JSON structure:
+{
+  "purchasePrice": [number or null],
+  "priceSource": "[direct/calculated/estimated]",
+  "businessInfo": {
+    "name": "[company name]",
+    "type": "[business type]",
+    "description": "[business description]",
+    "location": "[location]",
+    "employees": [number or null]
+  },
+  "financialData": {
+    "periods": ["2021", "2022", "2023", "TTM"],
+    "revenue": {"2021": [number], "2022": [number], "2023": [number], "TTM": [number]},
+    "ebitda": {"2021": [number], "2022": [number], "2023": [number], "TTM": [number]},
+    "adjustedEbitda": {"2021": [number], "2022": [number], "2023": [number], "TTM": [number]},
+    "sde": {"2021": [number], "2022": [number], "2023": [number], "TTM": [number]},
+    "netIncome": {"2021": [number], "2022": [number], "2023": [number], "TTM": [number]},
+    "costOfRevenue": {"2021": [number], "2022": [number], "2023": [number], "TTM": [number]},
+    "operatingExpenses": {"2021": [number], "2022": [number], "2023": [number], "TTM": [number]}
+  },
+  "quickStats": {
+    "revenueGrowth": "[percentage]",
+    "ebitdaMargin": "[percentage]",
+    "profitability": "[description]"
+  },
+  "confidence": [0-100]
+}
+
+EXTRACTION TIPS:
+- Numbers may be in thousands (K), millions (M), or full amounts
+- Convert all amounts to actual numbers (e.g., "2.5M" → 2500000)
+- Look for table headers with years and corresponding financial data rows
+- If data is missing, use null (not 0)
+- Insurance businesses often show Commission Income instead of Revenue
+
+Return ONLY the JSON object, no additional text.`;
+
     const content = [
       {
         type: 'text',
-        text: prompt + '\n\nIMPORTANT: Return ONLY valid JSON with no additional text or explanation.'
+        text: financialPrompt
       }
     ];
     
@@ -381,6 +423,9 @@ async function analyzeImagesWithOpenAI(images, fileName, prompt) {
   }
 }
 
+
+// Text analysis function also commented out - using only image analysis
+/*
 async function analyzeWithOpenAI(fileBuffer, fileName, prompt) {
   const openaiApiKey = process.env.OPENAI_API_KEY;
   
@@ -543,6 +588,8 @@ EXTRACTION TIPS:
     throw error;
   }
 }
+*/
+
 // Important: Increase body size limit for base64 images
 export const config = {
   api: {

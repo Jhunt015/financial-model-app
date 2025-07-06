@@ -814,8 +814,8 @@ const analyzeDocumentWithTextExtraction = async (file) => {
 
 // API analysis function with image support
 const analyzePDFWithImages = async (file, images) => {
-  // Use simple API for testing
-  const apiUrl = import.meta.env.VITE_API_URL || '/api/analyze-simple';
+  // Use main API for full financial extraction
+  const apiUrl = import.meta.env.VITE_API_URL || '/api/analyze-document';
   
   try {
     const response = await fetch(apiUrl, {
