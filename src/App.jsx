@@ -2553,6 +2553,12 @@ function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
           </div>
           <h1 className="text-5xl md:text-6xl font-bold text-black mb-4">Acquisition Analysis</h1>
           <p className="text-xl text-gray-700">Based on {model.historicalData.metadata.fileName}</p>
+          {model.historicalData.modelInfo && (
+            <div className="mt-4 inline-flex items-center px-4 py-2 bg-blue-100 rounded-lg text-sm">
+              <span className="text-blue-800 font-semibold">🤖 Analyzed by {model.historicalData.modelInfo.provider} {model.historicalData.modelInfo.model}</span>
+              <span className="ml-2 text-blue-600">• {new Date(model.historicalData.modelInfo.analysisTimestamp).toLocaleString()}</span>
+            </div>
+          )}
         </div>
 
         {/* Key Metrics */}

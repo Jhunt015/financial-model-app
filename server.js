@@ -56,18 +56,21 @@ async function analyzeWithOpenAI(fileBuffer, fileName, prompt) {
   }
 
   try {
-    console.log('Extracting text from PDF...');
-    console.log('PDF file size:', fileBuffer.length, 'bytes');
+    console.log('🤖 === STARTING OPENAI GPT-4O ANALYSIS (Local) ===');
+    console.log('📄 Extracting text from PDF...');
+    console.log('📏 PDF file size:', fileBuffer.length, 'bytes');
     
     // Extract text from PDF
     const pdfData = await pdf(fileBuffer);
     const extractedText = pdfData.text;
     
-    console.log('Extracted text length:', extractedText.length, 'characters');
-    console.log('First 500 chars:', extractedText.substring(0, 500));
+    console.log('📝 Extracted text length:', extractedText.length, 'characters');
+    console.log('🔍 First 500 chars:', extractedText.substring(0, 500));
     
     // Send to OpenAI GPT-4o
-    console.log('Sending to OpenAI GPT-4o...');
+    console.log('🚀 Sending to OpenAI GPT-4o API...');
+    console.log('🤖 Model: gpt-4o');
+    console.log('🔑 API Key configured:', !!openaiApiKey);
     
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -109,9 +112,23 @@ async function analyzeWithOpenAI(fileBuffer, fileName, prompt) {
     
     try {
       const parsedResult = JSON.parse(responseText);
+      
+      // Add model metadata to the response
+      parsedResult.modelInfo = {
+        provider: 'OpenAI',
+        model: 'gpt-4o',
+        analysisTimestamp: new Date().toISOString(),
+        extractedTextLength: extractedText.length
+      };
+      
+      console.log('=== OpenAI GPT-4o Analysis Complete (Local) ===');
+      console.log('Model used:', 'gpt-4o');
+      console.log('Provider:', 'OpenAI');
       console.log('Parsed JSON result:', JSON.stringify(parsedResult, null, 2));
       console.log('Purchase price from response:', parsedResult.purchasePrice);
       console.log('Quick stats from response:', parsedResult.quickStats);
+      console.log('=======================================');
+      
       return parsedResult;
     } catch (parseError) {
       // If JSON parsing fails, try to extract JSON from the response
