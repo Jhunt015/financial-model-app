@@ -7,23 +7,48 @@ import { PDFDocument } from 'pdf-lib';
 config({ path: '.env.local' });
 
 export default async function handler(req, res) {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
   try {
+    // Enable CORS
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      res.status(200).end();
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    console.log('=== API REQUEST RECEIVED ===');
+    console.log('Method:', req.method);
+    console.log('Content-Type:', req.headers['content-type']);
+    console.log('Body exists:', !!req.body);
+    console.log('Body keys:', Object.keys(req.body || {}));
+    
+    if (!req.body) {
+      return res.status(400).json({ 
+        error: 'No request body received',
+        details: { contentType: req.headers['content-type'] }
+      });
+    }
+    
+    const bodyString = JSON.stringify(req.body);
+    console.log('Body size:', bodyString.length, 'characters');
+    
     const { prompt, fileName, file, images, useImageExtraction } = req.body;
+    
+    console.log('Request params:', {
+      hasPrompt: !!prompt,
+      hasFileName: !!fileName,
+      hasFile: !!file,
+      hasImages: !!images,
+      imageCount: images?.length || 0,
+      useImageExtraction
+    });
     
     let analysisResult;
     
@@ -46,7 +71,7 @@ export default async function handler(req, res) {
     });
     
   } catch (error) {
-    console.error('=== ANALYSIS ERROR ===');
+    console.error('=== API ERROR ===');
     console.error('Error type:', error.constructor.name);
     console.error('Error message:', error.message);
     console.error('Error stack:', error.stack);
@@ -66,6 +91,21 @@ export default async function handler(req, res) {
         useImageExtraction: req.body?.useImageExtraction
       }
     });
+  } catch (topLevelError) {
+    console.error('=== TOP LEVEL API ERROR ===');
+    console.error('Error:', topLevelError);
+    console.error('Message:', topLevelError.message);
+    console.error('Stack:', topLevelError.stack);
+    
+    try {
+      res.status(500).json({ 
+        error: 'Server initialization error',
+        message: topLevelError.message,
+        type: 'TopLevelError'
+      });
+    } catch (responseError) {
+      console.error('Failed to send error response:', responseError);
+    }
   }
 }
 
