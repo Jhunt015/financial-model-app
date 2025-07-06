@@ -23,16 +23,22 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { prompt, fileName, file } = req.body;
+    const { prompt, fileName, file, images, useImageExtraction } = req.body;
     
-    if (!file) {
-      return res.status(400).json({ error: 'No file provided' });
+    let analysisResult;
+    
+    if (useImageExtraction && images && images.length > 0) {
+      // Use image-based extraction for better accuracy
+      console.log(`🖼️ Using image-based extraction with ${images.length} pages`);
+      analysisResult = await analyzeImagesWithOpenAI(images, fileName, prompt);
+    } else if (file) {
+      // Fall back to text extraction
+      console.log('📄 Using text-based extraction');
+      const fileBuffer = Buffer.from(file, 'base64');
+      analysisResult = await analyzeWithOpenAI(fileBuffer, fileName, prompt);
+    } else {
+      return res.status(400).json({ error: 'No file or images provided' });
     }
-
-    // Convert base64 file to buffer
-    const fileBuffer = Buffer.from(file, 'base64');
-    
-    const analysisResult = await analyzeWithOpenAI(fileBuffer, fileName, prompt);
     
     res.json({
       success: true,
@@ -178,6 +184,125 @@ async function extractWithPDFLib(fileBuffer) {
     throw new Error('PDF-lib extraction not fully implemented');
   } catch (error) {
     console.error('PDF-lib extraction failed:', error);
+    throw error;
+  }
+}
+
+async function analyzeImagesWithOpenAI(images, fileName, prompt) {
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  
+  if (!openaiApiKey) {
+    throw new Error('OpenAI API key not configured. Please add OPENAI_API_KEY to your environment variables.');
+  }
+
+  try {
+    console.log('🖼️ === STARTING OPENAI GPT-4O IMAGE ANALYSIS ===');
+    console.log('📄 Document:', fileName);
+    console.log('🖼️ Number of images:', images.length);
+    console.log('📏 Total image data size:', images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024, 'MB');
+    
+    // Create content array with text prompt and images
+    const content = [
+      {
+        type: 'text',
+        text: prompt + '\n\nIMPORTANT: Return ONLY valid JSON with no additional text or explanation.'
+      }
+    ];
+    
+    // Add each image
+    images.forEach((imageBase64, index) => {
+      content.push({
+        type: 'image_url',
+        image_url: {
+          url: `data:image/jpeg;base64,${imageBase64}`,
+          detail: 'high' // Use high detail for better extraction
+        }
+      });
+      console.log(`📄 Added page ${index + 1} to analysis`);
+    });
+    
+    console.log('🚀 Sending to OpenAI GPT-4 Vision API...');
+    
+    const requestBody = {
+      model: 'gpt-4o', // GPT-4 with vision capabilities
+      messages: [{
+        role: 'user',
+        content: content
+      }],
+      max_tokens: 4096,
+      temperature: 0.1
+    };
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${openaiApiKey}`
+      },
+      body: JSON.stringify(requestBody)
+    });
+    
+    console.log('OpenAI API response status:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenAI API error response:', errorText);
+      throw new Error(`OpenAI API request failed (${response.status}): ${errorText}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.error) {
+      throw new Error(`OpenAI API error: ${result.error.message || 'Unknown error'}`);
+    }
+    
+    const responseText = result.choices[0].message.content;
+    console.log('🤖 === OPENAI VISION RESPONSE ===');
+    console.log('📊 Response length:', responseText.length, 'characters');
+    console.log('🔍 Full response:', responseText);
+    console.log('💰 Usage stats:', result.usage);
+    console.log('==================================');
+    
+    try {
+      const parsedResult = JSON.parse(responseText);
+      
+      // Add model metadata to the response
+      parsedResult.modelInfo = {
+        provider: 'OpenAI',
+        model: 'gpt-4o-vision',
+        analysisTimestamp: new Date().toISOString(),
+        extractionMethod: 'Image-based OCR',
+        pageCount: images.length
+      };
+      
+      console.log('=== OpenAI GPT-4 Vision Analysis Complete ===');
+      console.log('Parsed JSON result:', JSON.stringify(parsedResult, null, 2));
+      console.log('=======================================');
+      
+      return parsedResult;
+    } catch (parseError) {
+      // Try to extract JSON from the response
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const fallbackResult = JSON.parse(jsonMatch[0]);
+          fallbackResult.modelInfo = {
+            provider: 'OpenAI',
+            model: 'gpt-4o-vision',
+            analysisTimestamp: new Date().toISOString(),
+            extractionMethod: 'Image-based OCR',
+            pageCount: images.length,
+            fallbackParsing: true
+          };
+          return fallbackResult;
+        } catch (e) {
+          throw new Error(`Failed to parse extracted JSON: ${e.message}`);
+        }
+      }
+      throw new Error(`Failed to parse OpenAI response as JSON: ${parseError.message}. Response was: ${responseText}`);
+    }
+  } catch (error) {
+    console.error('OpenAI Vision API error:', error);
     throw error;
   }
 }
@@ -344,3 +469,11 @@ EXTRACTION TIPS:
     throw error;
   }
 }
+// Important: Increase body size limit for base64 images
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "50mb",
+    },
+  },
+};

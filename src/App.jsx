@@ -672,13 +672,161 @@ const extractFinancialData = (jsonData, fileName) => {
   return result;
 };
 
-// PDF Processing Function - server-side extraction only
-const processPDFFile = async (file) => {
+// PDF Processing Function - convert to images first
+const processPDFFile = async (file, setProgress) => {
   console.log('Processing PDF file:', file.name);
   
-  // Always use server-side extraction via API
-  console.log('Using server-side PDF extraction and analysis...');
-  throw new Error('PDF processing will be handled by server');
+  try {
+    // Import PDF.js dynamically
+    const pdfjsLib = await import('pdfjs-dist/webpack');
+    
+    // Set worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    
+    console.log('Converting PDF to images for better extraction...');
+    
+    // Convert file to array buffer
+    const arrayBuffer = await file.arrayBuffer();
+    
+    // Load PDF document
+    const pdf = await pdfjsLib.getDocument({
+      data: arrayBuffer,
+      useSystemFonts: true
+    }).promise;
+    
+    console.log(`PDF loaded: ${pdf.numPages} pages`);
+    
+    const images = [];
+    const maxPages = Math.min(pdf.numPages, 10); // Limit to first 10 pages for performance
+    
+    // Convert each page to image
+    for (let i = 1; i <= maxPages; i++) {
+      console.log(`Converting page ${i}/${maxPages} to image...`);
+      
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better quality
+      
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      
+      await page.render({ 
+        canvasContext: context, 
+        viewport: viewport 
+      }).promise;
+      
+      // Convert to JPEG with compression for smaller size
+      const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+      images.push(base64);
+      
+      // Show progress
+      if (setProgress) {
+        setProgress(30 + (i / maxPages) * 40); // 30-70% for conversion
+      }
+    }
+    
+    console.log(`Converted ${images.length} pages to images`);
+    console.log(`Total image data size: ${images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024} MB`);
+    
+    // Now send images to API for extraction
+    console.log('Sending images to API for extraction...');
+    
+    const response = await analyzePDFWithImages(file, images);
+    
+    return response;
+    
+  } catch (error) {
+    console.error('PDF processing error:', error);
+    // Fall back to server-side text extraction
+    throw new Error(`PDF processing failed: ${error.message}`);
+  }
+};
+
+// API analysis function with image support
+const analyzePDFWithImages = async (file, images) => {
+  const apiUrl = import.meta.env.VITE_API_URL || '/api/analyze-document';
+  
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fileName: file.name,
+        images: images,
+        useImageExtraction: true,
+        prompt: `You are analyzing images of a PDF document. Please extract ALL financial data, tables, and key information from these pages.
+
+IMPORTANT: This is a Confidential Information Memorandum (CIM) for business acquisition. Focus on:
+
+1. **Purchase Price/Asking Price**: Look for any mention of valuation, asking price, or purchase price
+2. **Financial Statements**: Extract all revenue, EBITDA, expenses, and other financial metrics
+3. **Business Overview**: Company name, type of business, location, employees
+4. **Financial Tables**: Carefully extract all numbers from financial tables, matching values to their corresponding years
+5. **Growth Metrics**: Historical growth rates, projections
+
+For financial tables:
+- Years are typically column headers (2021, 2022, 2023, TTM)
+- Financial metrics (Revenue, EBITDA, etc.) are row headers
+- Extract the actual dollar values, not just the year numbers
+
+Return the data in the exact JSON format as specified, with all financial values as numbers (not strings).`
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    console.log('API response:', result);
+    
+    if (result.success && result.data) {
+      return processAPIResponse(result.data, file);
+    } else {
+      throw new Error(result.error || 'Failed to analyze document');
+    }
+  } catch (error) {
+    console.error('API analysis error:', error);
+    throw error;
+  }
+};
+
+// Process API response into our data format
+const processAPIResponse = (analysisData, file) => {
+  return {
+    id: generateId(),
+    source: 'pdf',
+    periods: analysisData.financialData?.periods || ['TTM'],
+    statements: { 
+      incomeStatement: {
+        revenue: analysisData.financialData?.revenue || {},
+        costOfRevenue: analysisData.financialData?.costOfRevenue || {},
+        grossProfit: analysisData.financialData?.grossProfit || {},
+        operatingExpenses: analysisData.financialData?.operatingExpenses || {},
+        ebitda: analysisData.financialData?.ebitda || {},
+        adjustedEbitda: analysisData.financialData?.adjustedEbitda || {},
+        recastEbitda: analysisData.financialData?.recastEbitda || {},
+        sde: analysisData.financialData?.sde || {},
+        netIncome: analysisData.financialData?.netIncome || {}
+      }
+    },
+    metadata: {
+      fileName: file.name,
+      uploadDate: new Date(),
+      confidence: analysisData.confidence || 0.85,
+      businessType: analysisData.businessInfo?.type || 'General Business',
+      businessName: analysisData.businessInfo?.name,
+      extractionMethod: 'Image-based OCR Analysis',
+      purchasePrice: analysisData.purchasePrice,
+      priceSource: analysisData.priceSource,
+      quickStats: analysisData.quickStats,
+      businessProfile: analysisData.businessProfile,
+      modelInfo: analysisData.modelInfo
+    }
+  };
 };
 
 // Get the best available EBITDA metric (prioritize adjusted/recast over actual)
@@ -3798,7 +3946,7 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user }) {
       
       if (fileExtension === 'pdf') {
         setProcessingStep('Analyzing PDF with Claude AI...');
-        result = await processPDFFile(file);
+        result = await processPDFFile(file, setProgress);
       } else {
         setProcessingStep('Analyzing Excel spreadsheet...');
         result = await processExcelFile(file);
