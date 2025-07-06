@@ -672,34 +672,13 @@ const extractFinancialData = (jsonData, fileName) => {
   return result;
 };
 
-// PDF Processing Function with text extraction
+// PDF Processing Function - server-side extraction only
 const processPDFFile = async (file) => {
   console.log('Processing PDF file:', file.name);
   
-  try {
-    // Extract text from PDF using PDF.js in browser
-    const text = await extractTextFromPDF(file);
-    
-    // Analyze the extracted text for financial data
-    const financialData = analyzeFinancialText(text, file.name);
-    
-    return {
-      id: generateId(),
-      source: 'pdf',
-      periods: financialData.periods,
-      statements: { incomeStatement: financialData.incomeStatement },
-      metadata: {
-        fileName: file.name,
-        uploadDate: new Date(),
-        confidence: 0.85,
-        businessType: financialData.businessType,
-        extractionMethod: 'PDF Text Analysis'
-      }
-    };
-  } catch (error) {
-    console.error('PDF analysis failed:', error);
-    throw new Error(`Failed to analyze PDF file "${file.name}". ${error.message || 'Unable to extract text from PDF. Please try uploading an Excel file instead.'}`);
-  }
+  // Always use server-side extraction via API
+  console.log('Using server-side PDF extraction and analysis...');
+  throw new Error('PDF processing will be handled by server');
 };
 
 // Get the best available EBITDA metric (prioritize adjusted/recast over actual)
@@ -950,62 +929,10 @@ const fileToBase64 = (file) => {
   });
 };
 
-// Extract text from PDF using PDF.js
-const extractTextFromPDF = async (file) => {
-  try {
-    // Dynamically import PDF.js
-    const pdfjsLib = await import('pdfjs-dist');
-    
-    // Set worker source to use local public file
-    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
-    
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async function(e) {
-        try {
-          const arrayBuffer = e.target.result;
-          
-          // Load PDF document
-          const pdf = await pdfjsLib.getDocument({
-            data: arrayBuffer,
-            useSystemFonts: true
-          }).promise;
-          
-          console.log(`PDF loaded: ${pdf.numPages} pages`);
-          
-          let fullText = '';
-          
-          // Extract text from all pages
-          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-            const page = await pdf.getPage(pageNum);
-            const textContent = await page.getTextContent();
-            
-            // Combine text items
-            const pageText = textContent.items
-              .map(item => item.str)
-              .join(' ');
-            
-            fullText += `Page ${pageNum}:\n${pageText}\n\n`;
-          }
-          
-          console.log('Extracted PDF text:', fullText.substring(0, 500) + '...');
-          resolve(fullText);
-          
-        } catch (error) {
-          console.error('PDF extraction error:', error);
-          reject(new Error(`Failed to extract text from PDF: ${error.message}`));
-        }
-      };
-      reader.onerror = () => reject(new Error('Failed to read PDF file'));
-      reader.readAsArrayBuffer(file);
-    });
-  } catch (error) {
-    console.error('PDF.js import error:', error);
-    throw new Error(`Failed to load PDF processing library: ${error.message}`);
-  }
-};
+// PDF.js extraction removed - using server-side extraction only
 
-// Analyze extracted text for financial data
+// Text analysis removed - using server-side analysis only
+/*
 const analyzeFinancialText = (text, fileName) => {
   console.log('Analyzing extracted PDF text for financial data...');
   
@@ -1225,6 +1152,7 @@ const analyzeFinancialText = (text, fileName) => {
     }
   };
 };
+*/
 
 // Excel Processing Functions
 const processExcelFile = async (file) => {
