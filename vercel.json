@@ -5,6 +5,12 @@
   "functions": {
     "api/analyze-document.js": {
       "maxDuration": 300
+    },
+    "api/analyze-simple.js": {
+      "maxDuration": 300
+    },
+    "api/test.js": {
+      "maxDuration": 60
     }
   },
   "routes": [
