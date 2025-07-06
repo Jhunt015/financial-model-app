@@ -2744,6 +2744,81 @@ function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
             Upload Different File
           </button>
         </div>
+        
+        {/* Debug Panel */}
+        <div className="mt-12 bg-gray-50 rounded-lg p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900">🔧 Debug Information</h2>
+            <button 
+              onClick={() => {
+                const debugData = {
+                  modelData: model,
+                  financialData: financialData,
+                  calculations: {
+                    ttmRevenue,
+                    ttmEBITDA,
+                    purchasePrice,
+                    sdeMultiple,
+                    priceSource,
+                    estimationMethod
+                  },
+                  businessAnalysis
+                };
+                console.log('=== COMPLETE DEBUG DATA ===', debugData);
+                navigator.clipboard.writeText(JSON.stringify(debugData, null, 2));
+                alert('Debug data copied to clipboard and logged to console!');
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Copy Debug Data
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Raw Financial Data */}
+            <div className="bg-white rounded p-4">
+              <h3 className="font-bold text-gray-700 mb-2">📊 Extracted Financial Data</h3>
+              <div className="text-xs font-mono bg-gray-100 p-2 rounded max-h-60 overflow-y-auto">
+                <pre>{JSON.stringify(financialData.statements, null, 2)}</pre>
+              </div>
+            </div>
+            
+            {/* API Response */}
+            <div className="bg-white rounded p-4">
+              <h3 className="font-bold text-gray-700 mb-2">🤖 AI Analysis Response</h3>
+              <div className="text-xs font-mono bg-gray-100 p-2 rounded max-h-60 overflow-y-auto">
+                <pre>{JSON.stringify({
+                  modelInfo: financialData.modelInfo,
+                  businessType: financialData.businessType,
+                  purchasePrice: financialData.purchasePrice,
+                  quickStats: financialData.quickStats
+                }, null, 2)}</pre>
+              </div>
+            </div>
+            
+            {/* Calculation Details */}
+            <div className="bg-white rounded p-4">
+              <h3 className="font-bold text-gray-700 mb-2">🧮 Key Calculations</h3>
+              <div className="space-y-2 text-sm">
+                <div>TTM Revenue: <span className="font-mono">{formatCurrency(ttmRevenue)}</span></div>
+                <div>TTM EBITDA: <span className="font-mono">{formatCurrency(ttmEBITDA)}</span></div>
+                <div>EBITDA Margin: <span className="font-mono">{formatPercent(ttmEBITDA / ttmRevenue)}</span></div>
+                <div>Purchase Price: <span className="font-mono">{formatCurrency(purchasePrice)}</span></div>
+                <div>SDE Multiple: <span className="font-mono">{sdeMultiple.toFixed(2)}x</span></div>
+                <div>Price Source: <span className="font-mono">{priceSource}</span></div>
+                <div>Estimation Method: <span className="font-mono">{estimationMethod}</span></div>
+              </div>
+            </div>
+            
+            {/* Business Analysis */}
+            <div className="bg-white rounded p-4">
+              <h3 className="font-bold text-gray-700 mb-2">🏢 Business Analysis</h3>
+              <div className="text-xs font-mono bg-gray-100 p-2 rounded max-h-60 overflow-y-auto">
+                <pre>{JSON.stringify(businessAnalysis, null, 2)}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

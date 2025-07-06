@@ -70,21 +70,33 @@ async function analyzeWithOpenAI(fileBuffer, fileName, prompt) {
     console.log('🤖 Model: gpt-4o');
     console.log('🔑 API Key configured:', !!openaiApiKey);
     
+    const fullPrompt = `${prompt}\n\nDocument content extracted from "${fileName}":\n\n${extractedText}`;
+    
+    console.log('📝 === FULL PROMPT BEING SENT ===');
+    console.log('📄 Prompt length:', fullPrompt.length, 'characters');
+    console.log('🎯 Prompt preview (first 1000 chars):', fullPrompt.substring(0, 1000));
+    console.log('📊 Extracted text preview (first 2000 chars):', extractedText.substring(0, 2000));
+    console.log('================================');
+    
+    const requestBody = {
+      model: 'gpt-4o',
+      messages: [{
+        role: 'user',
+        content: fullPrompt
+      }],
+      max_tokens: 8000,
+      temperature: 0.1
+    };
+    
+    console.log('🔗 Request body:', JSON.stringify(requestBody, null, 2));
+    
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${openaiApiKey}`
       },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [{
-          role: 'user',
-          content: `${prompt}\n\nDocument content extracted from "${fileName}":\n\n${extractedText}`
-        }],
-        max_tokens: 8000,
-        temperature: 0.1
-      })
+      body: JSON.stringify(requestBody)
     });
     
     console.log('OpenAI API response status:', response.status);
@@ -106,7 +118,12 @@ async function analyzeWithOpenAI(fileBuffer, fileName, prompt) {
     }
     
     const responseText = result.choices[0].message.content;
-    console.log('OpenAI API raw response:', responseText);
+    console.log('🤖 === OPENAI RESPONSE DETAILS ===');
+    console.log('📊 Response length:', responseText.length, 'characters');
+    console.log('🔍 Full response:', responseText);
+    console.log('💰 Usage stats:', result.usage);
+    console.log('🎯 Model used:', result.model);
+    console.log('==================================');
     
     try {
       const parsedResult = JSON.parse(responseText);
