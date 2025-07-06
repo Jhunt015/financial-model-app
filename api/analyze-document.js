@@ -1,6 +1,7 @@
 import { config } from 'dotenv';
 import pdf from 'pdf-parse';
 import PDFParser from 'pdf2json';
+import { PDFDocument } from 'pdf-lib';
 
 // Load environment variables
 config({ path: '.env.local' });
@@ -59,33 +60,51 @@ async function extractTextWithStructuredParser(fileBuffer) {
       pdfData = await pdf(fileBuffer);
       extractedText = pdfData.text;
       console.log('✅ pdf-parse extraction successful');
+      
+      // Check if we got meaningful text
+      const meaningfulText = extractedText.replace(/\s+/g, '').length > 100 && 
+                           extractedText.match(/\d{4,}/g)?.length > 5; // Should have numbers
+      
+      if (!meaningfulText) {
+        console.log('⚠️ Text extraction seems incomplete, trying OCR approach...');
+        throw new Error('Insufficient text extracted');
+      }
     } catch (parseError) {
-      console.log('⚠️ pdf-parse failed, trying pdf2json...', parseError.message);
+      console.log('⚠️ Standard extraction failed, trying advanced methods...', parseError.message);
       
-      // Fallback to pdf2json
-      const pdfParser = new PDFParser();
-      
-      extractedText = await new Promise((resolve, reject) => {
-        pdfParser.on('pdfParser_dataError', errData => reject(errData.parserError));
-        pdfParser.on('pdfParser_dataReady', pdfData => {
-          let text = '';
-          pdfData.Pages.forEach(page => {
-            page.Texts.forEach(textItem => {
-              textItem.R.forEach(r => {
-                if (r.T) {
-                  text += decodeURIComponent(r.T) + ' ';
-                }
+      // Try alternative extraction methods
+      try {
+        console.log('🔄 Trying alternative extraction methods...');
+        extractedText = await extractWithPDFLib(fileBuffer);
+        console.log('✅ Alternative extraction successful');
+      } catch (altError) {
+        console.log('⚠️ Alternative extraction failed, trying pdf2json...', altError.message);
+        
+        // Final fallback to pdf2json
+        const pdfParser = new PDFParser();
+        
+        extractedText = await new Promise((resolve, reject) => {
+          pdfParser.on('pdfParser_dataError', errData => reject(errData.parserError));
+          pdfParser.on('pdfParser_dataReady', pdfData => {
+            let text = '';
+            pdfData.Pages.forEach(page => {
+              page.Texts.forEach(textItem => {
+                textItem.R.forEach(r => {
+                  if (r.T) {
+                    text += decodeURIComponent(r.T) + ' ';
+                  }
+                });
               });
+              text += '\n\n';
             });
-            text += '\n\n';
+            resolve(text);
           });
-          resolve(text);
+          
+          pdfParser.parseBuffer(fileBuffer);
         });
         
-        pdfParser.parseBuffer(fileBuffer);
-      });
-      
-      console.log('✅ pdf2json extraction successful');
+        console.log('✅ pdf2json extraction successful');
+      }
     }
     
     console.log('📝 Raw text length:', extractedText.length, 'characters');
@@ -137,6 +156,32 @@ async function extractTextWithStructuredParser(fileBuffer) {
   }
 }
 
+async function extractWithPDFLib(fileBuffer) {
+  try {
+    console.log('🔧 Trying pdf-lib for structured extraction...');
+    const pdfDoc = await PDFDocument.load(fileBuffer);
+    const pages = pdfDoc.getPages();
+    
+    console.log(`📄 PDF has ${pages.length} pages`);
+    
+    // Try to extract form fields which might contain structured data
+    const form = pdfDoc.getForm();
+    const fields = form.getFields();
+    console.log(`📋 Found ${fields.length} form fields`);
+    
+    fields.forEach(field => {
+      const name = field.getName();
+      console.log(`Field: ${name}`);
+    });
+    
+    // For now, fall back to regular extraction
+    throw new Error('PDF-lib extraction not fully implemented');
+  } catch (error) {
+    console.error('PDF-lib extraction failed:', error);
+    throw error;
+  }
+}
+
 async function analyzeWithOpenAI(fileBuffer, fileName, prompt) {
   const openaiApiKey = process.env.OPENAI_API_KEY;
   
@@ -161,7 +206,33 @@ async function analyzeWithOpenAI(fileBuffer, fileName, prompt) {
     console.log('🤖 Model: gpt-4o');
     console.log('🔑 API Key configured:', !!openaiApiKey);
     
-    const fullPrompt = `${prompt}\n\nDocument content extracted from "${fileName}":\n\n${extractedText}`;
+    // Enhanced prompt that helps OpenAI understand table structures better
+    const enhancedPrompt = `${prompt}
+
+IMPORTANT EXTRACTION INSTRUCTIONS:
+1. The document may contain financial tables with years as column headers and metrics as row headers
+2. Look for patterns like:
+   - Revenue/Sales rows with values across multiple year columns
+   - EBITDA/Adjusted EBITDA rows with corresponding values
+   - Financial statements in tabular format
+3. When you see year numbers (2021, 2022, 2023, etc.), look for the corresponding values in the same row/column
+4. Pay special attention to:
+   - Dollar amounts (may appear as $X,XXX or just numbers)
+   - Percentages (X% or X.X%)
+   - Table structures where years are headers and financial metrics are in rows below
+
+Document content extracted from "${fileName}":
+
+${extractedText}
+
+EXTRACTION TIPS:
+- If you see "2021 2022 2023" these are likely column headers
+- Look for the actual dollar amounts that correspond to these years
+- Financial data often appears in structured tables
+- Values might be separated by spaces or tabs
+- Numbers might include commas (e.g., 1,234,567) or abbreviations (e.g., 1.2M)`;
+    
+    const fullPrompt = enhancedPrompt;
     
     console.log('📝 === FULL PROMPT BEING SENT ===');
     console.log('📄 Prompt length:', fullPrompt.length, 'characters');
