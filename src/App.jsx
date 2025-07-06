@@ -814,8 +814,8 @@ const analyzeDocumentWithTextExtraction = async (file) => {
 
 // API analysis function with image support
 const analyzePDFWithImages = async (file, images) => {
-  // Use main API for full financial extraction
-  const apiUrl = import.meta.env.VITE_API_URL || '/api/analyze-document';
+  // Use bulletproof vision API
+  const apiUrl = import.meta.env.VITE_API_URL || '/api/analyze-vision';
   
   try {
     const response = await fetch(apiUrl, {
@@ -825,24 +825,7 @@ const analyzePDFWithImages = async (file, images) => {
       },
       body: JSON.stringify({
         fileName: file.name,
-        images: images,
-        useImageExtraction: true,
-        prompt: `You are analyzing images of a PDF document. Please extract ALL financial data, tables, and key information from these pages.
-
-IMPORTANT: This is a Confidential Information Memorandum (CIM) for business acquisition. Focus on:
-
-1. **Purchase Price/Asking Price**: Look for any mention of valuation, asking price, or purchase price
-2. **Financial Statements**: Extract all revenue, EBITDA, expenses, and other financial metrics
-3. **Business Overview**: Company name, type of business, location, employees
-4. **Financial Tables**: Carefully extract all numbers from financial tables, matching values to their corresponding years
-5. **Growth Metrics**: Historical growth rates, projections
-
-For financial tables:
-- Years are typically column headers (2021, 2022, 2023, TTM)
-- Financial metrics (Revenue, EBITDA, etc.) are row headers
-- Extract the actual dollar values, not just the year numbers
-
-Return the data in the exact JSON format as specified, with all financial values as numbers (not strings).`
+        images: images
       })
     });
     
