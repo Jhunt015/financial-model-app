@@ -1,5 +1,5 @@
 import { config } from 'dotenv';
-import pdf from 'pdf-parse';
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.js';
 
 // Load environment variables
 config({ path: '.env.local' });
@@ -46,6 +46,46 @@ export default async function handler(req, res) {
   }
 }
 
+async function extractTextWithPDFJS(fileBuffer) {
+  try {
+    // Load PDF document
+    const pdfDocument = await pdfjs.getDocument({
+      data: fileBuffer,
+      useSystemFonts: true,
+      verbosity: 0
+    }).promise;
+    
+    console.log('📄 PDF loaded successfully. Pages:', pdfDocument.numPages);
+    
+    let fullText = '';
+    
+    // Extract text from each page
+    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      
+      // Combine all text items from the page
+      let pageText = '';
+      for (const item of textContent.items) {
+        if (item.str) {
+          pageText += item.str + ' ';
+        }
+      }
+      
+      console.log(`📃 Page ${pageNum} text length:`, pageText.length);
+      console.log(`📃 Page ${pageNum} preview:`, pageText.substring(0, 200));
+      
+      fullText += `\n\n--- Page ${pageNum} ---\n${pageText}`;
+    }
+    
+    console.log('✅ PDF.js extraction complete. Total text length:', fullText.length);
+    return fullText;
+  } catch (error) {
+    console.error('❌ PDF.js extraction failed:', error);
+    throw new Error(`Failed to extract text from PDF: ${error.message}`);
+  }
+}
+
 async function analyzeWithOpenAI(fileBuffer, fileName, prompt) {
   const openaiApiKey = process.env.OPENAI_API_KEY;
   
@@ -55,15 +95,15 @@ async function analyzeWithOpenAI(fileBuffer, fileName, prompt) {
 
   try {
     console.log('🤖 === STARTING OPENAI GPT-4O ANALYSIS ===');
-    console.log('📄 Extracting text from PDF...');
+    console.log('📄 Extracting text from PDF using PDF.js...');
     console.log('📏 PDF file size:', fileBuffer.length, 'bytes');
     
-    // Extract text from PDF
-    const pdfData = await pdf(fileBuffer);
-    const extractedText = pdfData.text;
+    // Extract text from PDF using PDF.js
+    const extractedText = await extractTextWithPDFJS(fileBuffer);
     
     console.log('📝 Extracted text length:', extractedText.length, 'characters');
     console.log('🔍 First 500 chars:', extractedText.substring(0, 500));
+    console.log('🔍 Full extracted text:', extractedText);
     
     // Send to OpenAI GPT-4o
     console.log('🚀 Sending to OpenAI GPT-4o API...');
