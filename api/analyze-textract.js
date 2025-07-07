@@ -121,11 +121,30 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('❌ Textract API Error:', error);
+    console.error('Error details:', {
+      name: error.name,
+      code: error.code,
+      statusCode: error.statusCode,
+      message: error.message,
+      stack: error.stack
+    });
+    
+    // If it's an AWS credentials issue, return specific error
+    if (error.message?.includes('credentials') || error.message?.includes('token') || error.code === 'InvalidSignatureException') {
+      return res.status(500).json({
+        error: 'AWS credentials not configured',
+        message: `AWS authentication failed: ${error.message}`,
+        type: error.constructor.name,
+        awsError: error.code
+      });
+    }
     
     return res.status(500).json({
       error: 'Document analysis failed',
       message: error.message,
-      type: error.constructor.name
+      type: error.constructor.name,
+      awsError: error.code || 'Unknown',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }

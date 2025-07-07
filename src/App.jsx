@@ -4376,7 +4376,7 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user }) {
       let result;
       
       if (fileExtension === 'pdf') {
-        setProcessingStep('Analyzing PDF with Claude AI...');
+        setProcessingStep('Analyzing PDF with AI + AWS Textract...');
         result = await processPDFFile(file, setProgress);
       } else {
         setProcessingStep('Analyzing Excel spreadsheet...');
