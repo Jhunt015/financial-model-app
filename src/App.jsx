@@ -729,7 +729,9 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
       console.log(`Converting page ${i}/${maxPages} to image...`);
       
       const page = await pdf.getPage(i);
-      const viewport = page.getViewport({ scale: 1.5 }); // Reduced scale to balance quality vs size
+      // Lower scale for OpenAI Vision to reduce file size (it can handle lower resolution well)
+      const scale = service === 'openai-vision' ? 1.2 : 1.5;
+      const viewport = page.getViewport({ scale: scale });
       
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
@@ -741,8 +743,9 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
         viewport: viewport 
       }).promise;
       
-      // Convert to JPEG with higher compression for smaller size
-      const base64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+      // Convert to JPEG with higher compression for smaller size (lower quality for OpenAI Vision)
+      const compressionQuality = service === 'openai-vision' ? 0.4 : 0.6; // More compression for vision
+      const base64 = canvas.toDataURL('image/jpeg', compressionQuality).split(',')[1];
       images.push(base64);
       
       // Log individual image size
@@ -759,8 +762,21 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
     console.log(`Total image data size: ${totalSizeMB.toFixed(2)} MB`);
     
     // Check if payload is too large for Vercel (more lenient for OpenAI Vision)
-    const maxSizeMB = service === 'openai-vision' ? 25 : 10;
+    const maxSizeMB = service === 'openai-vision' ? 20 : 10;
     if (totalSizeMB > maxSizeMB) {
+      if (service === 'openai-vision' && images.length > 10) {
+        // Try with fewer pages for OpenAI Vision
+        console.log(`⚠️ Payload too large (${totalSizeMB.toFixed(2)}MB), retrying with first 10 pages...`);
+        const reducedImages = images.slice(0, 10);
+        const reducedSizeMB = reducedImages.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024;
+        console.log(`Reduced payload size: ${reducedSizeMB.toFixed(2)} MB`);
+        
+        if (reducedSizeMB <= maxSizeMB) {
+          const response = await analyzePDFWithImages(file, reducedImages, service, setExtractedData);
+          return response;
+        }
+      }
+      
       console.log(`⚠️ Image payload too large (${totalSizeMB.toFixed(2)}MB > ${maxSizeMB}MB), falling back to text extraction...`);
       throw new Error(`Image payload too large (${totalSizeMB.toFixed(2)}MB), using text extraction`);
     }
@@ -855,13 +871,17 @@ const analyzePDFWithImages = async (file, images, service = 'pdf-text-openai', s
   // Get base64 file data for processing
   const fileData = await fileToBase64(file);
   
-  // Store for debugging
-  localStorage.setItem('lastUploadedFile', JSON.stringify({
-    fileName: file.name,
-    images: images,
-    fileData: fileData,
-    timestamp: new Date().toISOString()
-  }));
+  // Store metadata only for debugging (avoid localStorage quota issues)
+  try {
+    localStorage.setItem('lastUploadMetadata', JSON.stringify({
+      fileName: file.name,
+      imageCount: images?.length || 0,
+      fileSizeMB: fileData ? (fileData.length / 1024 / 1024).toFixed(2) : 0,
+      timestamp: new Date().toISOString()
+    }));
+  } catch (e) {
+    console.log('localStorage quota exceeded, skipping debug storage');
+  }
   
   try {
     console.log(`🚀 Attempting ${service.toUpperCase()} analysis...`);
