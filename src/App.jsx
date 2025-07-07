@@ -719,7 +719,10 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
     console.log(`PDF loaded: ${pdf.numPages} pages`);
     
     const images = [];
-    const maxPages = Math.min(pdf.numPages, 5); // Limit to first 5 pages to reduce payload size
+    // For OpenAI Vision, use more pages for better analysis; others limit to reduce payload size
+    const maxPages = service === 'openai-vision' ? Math.min(pdf.numPages, 20) : Math.min(pdf.numPages, 5);
+    
+    console.log(`Will process ${maxPages} pages for ${service} analysis`);
     
     // Convert each page to image
     for (let i = 1; i <= maxPages; i++) {
@@ -755,10 +758,11 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
     const totalSizeMB = images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024;
     console.log(`Total image data size: ${totalSizeMB.toFixed(2)} MB`);
     
-    // Check if payload is too large for Vercel
-    if (totalSizeMB > 10) {
-      console.log('⚠️ Image payload too large, falling back to text extraction...');
-      throw new Error('Image payload too large, using text extraction');
+    // Check if payload is too large for Vercel (more lenient for OpenAI Vision)
+    const maxSizeMB = service === 'openai-vision' ? 25 : 10;
+    if (totalSizeMB > maxSizeMB) {
+      console.log(`⚠️ Image payload too large (${totalSizeMB.toFixed(2)}MB > ${maxSizeMB}MB), falling back to text extraction...`);
+      throw new Error(`Image payload too large (${totalSizeMB.toFixed(2)}MB), using text extraction`);
     }
     
     // Now send images to API for extraction

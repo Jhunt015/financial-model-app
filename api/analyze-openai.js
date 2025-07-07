@@ -33,7 +33,7 @@ export default async function handler(req, res) {
       });
     }
 
-    console.log('📄 Analyzing document with OpenAI 4o...');
+    console.log(`📄 Analyzing document with OpenAI 4o (${images.length} pages)...`);
     const analysis = await performOpenAIAnalysis(images, fileName);
     
     const result = {
