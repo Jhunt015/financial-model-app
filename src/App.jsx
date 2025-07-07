@@ -984,29 +984,133 @@ const runExtractionDebug = async (fileName) => {
   }
 };
 
+// Calculate financial metrics from raw data
+const calculateFinancialMetrics = (revenue, costOfRevenue, operatingExpenses, netIncome) => {
+  const grossProfit = {};
+  const ebitda = {};
+  const sde = {};
+  
+  // Get all periods from the data
+  const periods = new Set([
+    ...Object.keys(revenue || {}),
+    ...Object.keys(costOfRevenue || {}),
+    ...Object.keys(operatingExpenses || {}),
+    ...Object.keys(netIncome || {})
+  ]);
+  
+  periods.forEach(period => {
+    const rev = revenue[period] || 0;
+    const cogs = costOfRevenue[period] || 0;
+    const opex = operatingExpenses[period] || 0;
+    const net = netIncome[period] || 0;
+    
+    // Calculate Gross Profit: Revenue - COGS
+    if (rev > 0) {
+      grossProfit[period] = rev - cogs;
+    }
+    
+    // Calculate EBITDA: Revenue - COGS - Operating Expenses
+    // For insurance agencies: Revenue - Operating Expenses (no COGS typically)
+    if (rev > 0 && (opex > 0 || cogs > 0)) {
+      ebitda[period] = rev - cogs - opex;
+    }
+    
+    // Calculate SDE (Seller's Discretionary Earnings): EBITDA + Owner benefits
+    // For small businesses, often approximate as EBITDA + estimated owner salary
+    if (ebitda[period]) {
+      // Conservative estimate: add back estimated owner salary (typically $60K-$100K for small business)
+      const estimatedOwnerSalary = rev > 500000 ? 80000 : 60000;
+      sde[period] = ebitda[period] + estimatedOwnerSalary;
+    }
+  });
+  
+  return { grossProfit, ebitda, sde };
+};
+
+// Validate and merge extracted metrics with calculated ones
+const validateAndMergeMetrics = (extractedMetrics, calculatedMetrics, revenue) => {
+  const result = {};
+  
+  // Get all periods
+  const periods = new Set([
+    ...Object.keys(extractedMetrics || {}),
+    ...Object.keys(calculatedMetrics || {}),
+    ...Object.keys(revenue || {})
+  ]);
+  
+  periods.forEach(period => {
+    const extracted = extractedMetrics[period];
+    const calculated = calculatedMetrics[period];
+    const rev = revenue[period] || 0;
+    
+    // Validate extracted data (catch obviously wrong values)
+    const isExtractedValid = extracted != null && 
+                            extracted >= 0 && 
+                            extracted <= rev * 1.1 && // Allow up to 110% of revenue (for margin of error)
+                            !isNaN(extracted);
+    
+    // Use extracted if valid, otherwise use calculated
+    if (isExtractedValid) {
+      result[period] = extracted;
+    } else if (calculated != null && !isNaN(calculated)) {
+      result[period] = calculated;
+    }
+  });
+  
+  return result;
+};
+
 // Process Textract API response into our data format
 const processTextractResponse = (textractData, file) => {
   const structuredData = textractData.structuredData || {};
   const textractFinancials = textractData.textractData?.financialData || {};
   const intelligence = textractData.intelligence || '';
   
-  // Combine Textract extracted data with AI intelligence
+  // Extract and validate financial data
+  const revenue = textractFinancials.revenue || structuredData.financialData?.revenue || {};
+  const costOfRevenue = textractFinancials.cogs || textractFinancials.costOfRevenue || structuredData.financialData?.costOfRevenue || {};
+  const operatingExpenses = textractFinancials.operatingExpenses || structuredData.financialData?.operatingExpenses || {};
+  const netIncome = textractFinancials.netIncome || structuredData.financialData?.netIncome || {};
+  
+  // Calculate missing financial metrics
+  const { grossProfit, ebitda, sde } = calculateFinancialMetrics(revenue, costOfRevenue, operatingExpenses, netIncome);
+  
+  // Combine extracted gross profit with calculated (prefer extracted if reasonable)
+  const finalGrossProfit = validateAndMergeMetrics(
+    textractFinancials.grossProfit || structuredData.financialData?.grossProfit || {},
+    grossProfit,
+    revenue
+  );
+  
+  // Combine extracted EBITDA with calculated
+  const finalEbitda = validateAndMergeMetrics(
+    textractFinancials.ebitda || structuredData.financialData?.ebitda || {},
+    ebitda,
+    revenue
+  );
+  
+  // Use calculated SDE (more reliable for small businesses)
+  const finalSDE = structuredData.financialData?.sde || sde;
+  
+  // Get the correct extraction method from metadata
+  const extractionMethod = textractData.metadata?.extractionMethod || 'Unknown Analysis';
+  
   return {
     id: generateId(),
     source: 'pdf',
     periods: structuredData.financialData?.periods || Object.keys(textractFinancials.years || {}) || ['TTM'],
     statements: { 
       incomeStatement: {
-        revenue: textractFinancials.revenue || structuredData.financialData?.revenue || {},
+        revenue: revenue,
         commissionIncome: structuredData.financialData?.commissionIncome || {},
-        costOfRevenue: textractFinancials.cogs || structuredData.financialData?.costOfRevenue || {},
-        grossProfit: textractFinancials.grossProfit || structuredData.financialData?.grossProfit || {},
-        operatingExpenses: textractFinancials.operatingExpenses || structuredData.financialData?.operatingExpenses || {},
-        ebitda: textractFinancials.ebitda || structuredData.financialData?.ebitda || {},
+        costOfRevenue: costOfRevenue,
+        grossProfit: finalGrossProfit,
+        operatingExpenses: operatingExpenses,
+        ebitda: finalEbitda,
         adjustedEbitda: structuredData.financialData?.adjustedEbitda || {},
         recastEbitda: structuredData.financialData?.recastEbitda || {},
-        sde: structuredData.financialData?.sde || {},
-        netIncome: textractFinancials.netIncome || structuredData.financialData?.netIncome || {},
+        sde: finalSDE,
+        netIncome: netIncome,
         cashFlow: structuredData.financialData?.cashFlow || {},
         adjustments: textractFinancials.adjustments || []
       }
@@ -1017,7 +1121,7 @@ const processTextractResponse = (textractData, file) => {
       confidence: textractData.confidence || 0.85,
       businessType: structuredData.businessInfo?.type || 'General Business',
       businessName: structuredData.businessInfo?.name,
-      extractionMethod: 'AWS Textract + AI Analysis',
+      extractionMethod: extractionMethod,
       purchasePrice: structuredData.purchasePrice,
       priceSource: structuredData.priceSource,
       tablesExtracted: textractData.textractData?.allTables?.length || 0,

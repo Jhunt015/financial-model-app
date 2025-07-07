@@ -88,7 +88,12 @@ CRITICAL REQUIREMENTS:
 3. Look for patterns like "$5.2M", "$5,200,000", "5.2 million", percentages, etc.
 4. Identify financial statement types (P&L, Balance Sheet, etc.)
 5. Extract business information (name, type, description)
-6. Find any purchase/asking prices mentioned
+6. **PRIORITY**: Find purchase/asking prices with these exact patterns:
+   - "Asking Price", "Purchase Price", "Sale Price", "Transaction Value"
+   - "Listed at", "Priced at", "Offering Price", "Acquisition Price"
+   - "Target Price", "Expected Sale Price", "Investment Required"
+   - "Total Investment", "Business Value", "Enterprise Value"
+   - Look for standalone price mentions near business summaries
 
 REQUIRED JSON OUTPUT:
 {

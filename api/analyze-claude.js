@@ -89,7 +89,13 @@ ANALYSIS REQUIREMENTS:
 2. Identify all financial statement types (P&L, Balance Sheet, Cash Flow, etc.)
 3. Parse complex financial data including percentages, ratios, and growth rates
 4. Extract business information and any purchase/valuation details
-5. Provide detailed financial insights and red flags
+5. **CRITICAL**: Search extensively for purchase/asking prices using these patterns:
+   - "Asking Price", "Purchase Price", "Sale Price", "Transaction Value"
+   - "Listed at", "Priced at", "Offering Price", "Acquisition Price" 
+   - "Target Price", "Expected Sale Price", "Investment Required"
+   - "Total Investment", "Business Value", "Enterprise Value"
+   - "Selling for", "Available for", "Price:", "Cost:", numerical values in headers/summaries
+6. Provide detailed financial insights and red flags
 
 OUTPUT FORMAT (strict JSON):
 {

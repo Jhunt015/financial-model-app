@@ -145,7 +145,13 @@ CRITICAL REQUIREMENTS:
 2. Include the year/period for each value
 3. Look for patterns like "$5.2M", "$5,200,000", "5.2 million", percentages, etc.
 4. Extract business information (name, type, description)
-5. Find any purchase/asking prices mentioned
+5. **CRITICAL PRIORITY**: Find purchase/asking prices using these specific patterns:
+   - "Asking Price", "Purchase Price", "Sale Price", "Transaction Value"
+   - "Listed at", "Priced at", "Offering Price", "Acquisition Price"
+   - "Target Price", "Expected Sale Price", "Investment Required"
+   - "Total Investment", "Business Value", "Enterprise Value"
+   - "Selling for", "Available for", "Price:", "Cost:", large numerical values in document headers
+   - Price multiples (e.g., "3.5x EBITDA", "4x Revenue") - calculate actual price if base metrics available
 
 REQUIRED JSON OUTPUT:
 {
