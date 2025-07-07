@@ -673,7 +673,7 @@ const extractFinancialData = (jsonData, fileName) => {
 };
 
 // PDF Processing Function - convert to images first
-const processPDFFile = async (file, setProgress, service = 'openai') => {
+const processPDFFile = async (file, setProgress, service = 'openai', setExtractedData) => {
   console.log('Processing PDF file:', file.name);
   
   try {
@@ -746,7 +746,7 @@ const processPDFFile = async (file, setProgress, service = 'openai') => {
       setProgress(75); // Progress for API call
     }
     
-    const response = await analyzePDFWithImages(file, images, service);
+    const response = await analyzePDFWithImages(file, images, service, setExtractedData);
     
     return response;
     
@@ -813,7 +813,7 @@ const analyzeDocumentWithTextExtraction = async (file) => {
 };
 
 // Enhanced API analysis function with service selection
-const analyzePDFWithImages = async (file, images, service = 'openai') => {
+const analyzePDFWithImages = async (file, images, service = 'openai', setExtractedData) => {
   // Service URLs mapping
   const serviceUrls = {
     openai: '/api/analyze-openai',
@@ -861,11 +861,22 @@ const analyzePDFWithImages = async (file, images, service = 'openai') => {
     }
     
     const result = await response.json();
-    console.log('🎉 Textract analysis complete:', result);
+    console.log(`🎉 ${service.toUpperCase()} analysis complete:`, result);
     
     if (result.success && result.data) {
       console.log('✅ Tables extracted:', result.metadata?.tablesFound || 0);
       console.log('📊 Confidence score:', result.metadata?.confidence || 'unknown');
+      
+      // Show real-time extracted data
+      if (setExtractedData && result.data.textractData?.financialData) {
+        setExtractedData({
+          revenue: result.data.textractData.financialData.revenue || {},
+          ebitda: result.data.textractData.financialData.ebitda || {},
+          businessInfo: result.data.structuredData?.businessInfo || {},
+          purchasePrice: result.data.structuredData?.purchasePrice || null
+        });
+      }
+      
       return processTextractResponse(result.data, file);
     } else {
       throw new Error(result.error || 'Failed to analyze document');
@@ -4362,10 +4373,12 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [processingStep, setProcessingStep] = useState('');
+  const [extractedData, setExtractedData] = useState(null);
 
   const processFile = async (file) => {
     setIsProcessing(true);
     setProgress(0);
+    setExtractedData(null);
 
     try {
       setProgress(10);
@@ -4384,7 +4397,7 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
       
       if (fileExtension === 'pdf') {
         setProcessingStep(`Analyzing PDF with ${analysisService.toUpperCase()}...`);
-        result = await processPDFFile(file, setProgress, analysisService);
+        result = await processPDFFile(file, setProgress, analysisService, setExtractedData);
       } else {
         setProcessingStep('Analyzing Excel spreadsheet...');
         result = await processExcelFile(file);
@@ -4439,47 +4452,49 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
           <p className="text-xl text-gray-700">Upload your Confidential Information Memorandum or financial statements to begin analysis</p>
           
           {/* Analysis Service Selector */}
-          <div className="mt-8 mb-8">
+          <div className="mt-8 mb-8 bg-gray-50 p-6 rounded-2xl border border-gray-200">
             <div className="flex items-center justify-center space-x-4 mb-4">
-              <Settings className="h-6 w-6 text-gray-600" />
-              <h3 className="text-lg font-semibold text-gray-700">Choose Analysis Service</h3>
+              <Settings className="h-6 w-6 text-blue-600" />
+              <h3 className="text-lg font-semibold text-gray-800">Choose Analysis Service</h3>
             </div>
-            <div className="flex justify-center space-x-4">
+            <div className="flex justify-center space-x-3">
               <button
                 onClick={() => setAnalysisService('openai')}
-                className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                className={`px-6 py-3 rounded-lg font-medium transition-all border-2 ${
                   analysisService === 'openai'
-                    ? 'bg-green-600 text-white shadow-lg'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-lg transform scale-105'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:bg-blue-50'
                 }`}
               >
-                OpenAI 4o
+                🤖 OpenAI 4o
               </button>
               <button
                 onClick={() => setAnalysisService('claude')}
-                className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                className={`px-6 py-3 rounded-lg font-medium transition-all border-2 ${
                   analysisService === 'claude'
-                    ? 'bg-green-600 text-white shadow-lg'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-purple-600 text-white border-purple-600 shadow-lg transform scale-105'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400 hover:bg-purple-50'
                 }`}
               >
-                Claude Opus 4
+                🧠 Claude Opus 4
               </button>
               <button
                 onClick={() => setAnalysisService('textract')}
-                className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                className={`px-6 py-3 rounded-lg font-medium transition-all border-2 ${
                   analysisService === 'textract'
-                    ? 'bg-green-600 text-white shadow-lg'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-orange-600 text-white border-orange-600 shadow-lg transform scale-105'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-orange-400 hover:bg-orange-50'
                 }`}
               >
-                AWS Textract
+                ☁️ AWS Textract
               </button>
             </div>
-            <p className="text-sm text-gray-500 mt-2">
-              Selected: {analysisService === 'openai' ? 'OpenAI GPT-4o Vision' : 
-                        analysisService === 'claude' ? 'Claude Opus 4 Vision' : 'AWS Textract + AI'}
-            </p>
+            <div className="mt-4 p-3 bg-blue-100 rounded-lg">
+              <p className="text-sm text-blue-800 font-medium">
+                🔍 Selected: {analysisService === 'openai' ? 'OpenAI GPT-4o Vision Analysis' : 
+                            analysisService === 'claude' ? 'Claude Opus 4 Vision Analysis' : 'AWS Textract + AI Analysis'}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -4539,6 +4554,31 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
                     </div>
                   )}
                 </div>
+                
+                {/* Real-time extraction data display */}
+                {extractedData && (
+                  <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <h4 className="text-sm font-semibold text-blue-800 mb-2">🔍 Data Being Extracted:</h4>
+                    <div className="text-xs text-blue-700 space-y-1">
+                      {extractedData.revenue && Object.keys(extractedData.revenue).length > 0 && (
+                        <div>📈 Revenue: {Object.entries(extractedData.revenue).map(([year, value]) => 
+                          value ? `${year}: $${(value/1000000).toFixed(1)}M` : null
+                        ).filter(Boolean).join(', ')}</div>
+                      )}
+                      {extractedData.ebitda && Object.keys(extractedData.ebitda).length > 0 && (
+                        <div>💰 EBITDA: {Object.entries(extractedData.ebitda).map(([year, value]) => 
+                          value ? `${year}: $${(value/1000000).toFixed(1)}M` : null
+                        ).filter(Boolean).join(', ')}</div>
+                      )}
+                      {extractedData.businessInfo && extractedData.businessInfo.name && (
+                        <div>🏢 Company: {extractedData.businessInfo.name}</div>
+                      )}
+                      {extractedData.purchasePrice && (
+                        <div>💵 Purchase Price: ${(extractedData.purchasePrice/1000000).toFixed(1)}M</div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
