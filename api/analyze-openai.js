@@ -15,10 +15,13 @@ export default async function handler(req, res) {
 
   try {
     console.log('🔍 Starting OpenAI 4o analysis');
+    
+    const { fileData, fileName, images } = req.body;
+    
     console.log('📊 Request details:', {
       fileName,
-      imageCount: req.body.images?.length || 0,
-      hasFileData: !!req.body.fileData,
+      imageCount: images?.length || 0,
+      hasFileData: !!fileData,
       requestSize: JSON.stringify(req.body).length
     });
     
@@ -30,8 +33,6 @@ export default async function handler(req, res) {
         message: 'Missing OPENAI_API_KEY environment variable'
       });
     }
-
-    const { fileData, fileName, images } = req.body;
 
     if (!images || images.length === 0) {
       console.error('❌ No images provided for analysis');
