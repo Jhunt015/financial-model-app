@@ -10,6 +10,9 @@ export class FinancialTableExtractor {
    * Extract P&L data from Textract blocks
    */
   extractPnLFromTextract(textractBlocks) {
+    // Store blocks for reference resolution
+    this.setAllBlocks(textractBlocks);
+    
     // Find P&L table
     const pnlTable = this._findPnLTable(textractBlocks);
     
@@ -129,7 +132,7 @@ export class FinancialTableExtractor {
       for (const relationship of table.Relationships) {
         if (relationship.Type === 'CHILD') {
           for (const childId of relationship.Ids) {
-            const cell = this._findBlockById(childId);
+            const cell = this._findBlockById(childId, this.allBlocks);
             if (cell && cell.BlockType === 'CELL') {
               cells.push(cell);
             }
@@ -173,7 +176,7 @@ export class FinancialTableExtractor {
       for (const relationship of cell.Relationships) {
         if (relationship.Type === 'CHILD') {
           for (const childId of relationship.Ids) {
-            const word = this._findBlockById(childId);
+            const word = this._findBlockById(childId, this.allBlocks);
             if (word && word.BlockType === 'WORD') {
               text += word.Text + ' ';
             }
@@ -587,12 +590,21 @@ export class FinancialTableExtractor {
   }
 
   /**
-   * Helper to find block by ID (would need actual Textract response structure)
+   * Helper to find block by ID
    */
-  _findBlockById(id) {
-    // This would need to be implemented based on actual Textract response structure
-    // For now, return a mock structure
-    return null;
+  _findBlockById(id, allBlocks) {
+    if (!allBlocks) {
+      console.warn('No blocks provided to _findBlockById');
+      return null;
+    }
+    return allBlocks.find(block => block.Id === id) || null;
+  }
+
+  /**
+   * Set all blocks for reference resolution
+   */
+  setAllBlocks(blocks) {
+    this.allBlocks = blocks;
   }
 }
 

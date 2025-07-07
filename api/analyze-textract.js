@@ -5,11 +5,13 @@ import AWS from 'aws-sdk';
 import FinancialTableExtractor from './utils/textractExtractor.js';
 
 // Configure AWS SDK
-const textract = new AWS.Textract({
+AWS.config.update({
   region: process.env.AWS_REGION || 'us-east-1',
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
 });
+
+const textract = new AWS.Textract();
 
 export default async function handler(req, res) {
   // Set CORS headers
@@ -30,9 +32,18 @@ export default async function handler(req, res) {
     
     // Validate environment
     if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+      console.log('⚠️ AWS credentials not configured, missing:', {
+        hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+        hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY
+      });
       return res.status(500).json({
         error: 'AWS credentials not configured',
-        message: 'Missing AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY'
+        message: 'Missing AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY. Configure these in Vercel environment variables.',
+        details: {
+          hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+          hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
+          region: process.env.AWS_REGION || 'us-east-1'
+        }
       });
     }
 

@@ -30,6 +30,9 @@
     "api/analyze-debug.js": {
       "maxDuration": 300
     },
+    "api/test-aws.js": {
+      "maxDuration": 60
+    },
     "api/test.js": {
       "maxDuration": 60
     }
