@@ -1,22 +1,8 @@
-// AWS Textract Document Analysis API
-// Extracts structured financial data using AWS Textract, then applies AI analysis
+// AWS Textract v3 Document Analysis API
+// Uses AWS SDK v3 for better serverless compatibility
 
-import AWS from 'aws-sdk';
+import { TextractClient, AnalyzeDocumentCommand } from '@aws-sdk/client-textract';
 import FinancialTableExtractor from './utils/textractExtractor.js';
-
-// Configure AWS SDK for Vercel environment
-const awsConfig = {
-  region: process.env.AWS_REGION || 'us-east-1',
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  maxRetries: 3,
-  httpOptions: {
-    timeout: 120000
-  }
-};
-
-AWS.config.update(awsConfig);
-const textract = new AWS.Textract(awsConfig);
 
 export default async function handler(req, res) {
   // Set CORS headers
@@ -33,7 +19,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('🔍 Starting Textract document analysis');
+    console.log('🔍 Starting Textract v3 document analysis');
     
     // Validate and log environment
     const credentialStatus = {
@@ -63,9 +49,18 @@ export default async function handler(req, res) {
       });
     }
 
+    // Create Textract client with v3 SDK
+    const textractClient = new TextractClient({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+      }
+    });
+
     // Step 1: Extract structured data with Textract
-    console.log('📄 Analyzing document with AWS Textract...');
-    const textractData = await analyzeDocumentWithTextract(fileData, images);
+    console.log('📄 Analyzing document with AWS Textract v3...');
+    const textractData = await analyzeDocumentWithTextractV3(textractClient, fileData, images);
     
     // Step 2: Extract financial tables
     console.log('📊 Extracting financial tables...');
@@ -106,60 +101,56 @@ export default async function handler(req, res) {
       confidence: calculateConfidence(financialData, allTables)
     };
 
-    console.log('✅ Textract analysis complete');
+    console.log('✅ Textract v3 analysis complete');
     
     return res.status(200).json({
       success: true,
       data: comprehensiveResult,
       metadata: {
-        extractionMethod: 'aws-textract-plus-ai',
+        extractionMethod: 'aws-textract-v3-plus-ai',
         processingTime: Date.now(),
         tablesFound: allTables.length,
-        confidence: comprehensiveResult.confidence
+        confidence: comprehensiveResult.confidence,
+        sdkVersion: 'v3'
       }
     });
 
   } catch (error) {
-    console.error('❌ Textract API Error:', error);
+    console.error('❌ Textract v3 API Error:', error);
     
     return res.status(500).json({
       error: 'Document analysis failed',
       message: error.message,
-      type: error.constructor.name
+      type: error.constructor.name,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }
 
 /**
- * Analyze document with AWS Textract
+ * Analyze document with AWS Textract v3
  */
-async function analyzeDocumentWithTextract(fileData, images) {
-  let params;
+async function analyzeDocumentWithTextractV3(textractClient, fileData, images) {
+  let documentBytes;
   
   if (fileData) {
     // Convert base64 to buffer
-    const buffer = Buffer.from(fileData.split(',')[1], 'base64');
-    
-    params = {
-      Document: {
-        Bytes: buffer
-      },
-      FeatureTypes: ['TABLES', 'FORMS']
-    };
+    const base64Data = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+    documentBytes = Buffer.from(base64Data, 'base64');
   } else if (images && images.length > 0) {
-    // Use first image for Textract (or combine if needed)
-    const buffer = Buffer.from(images[0], 'base64');
-    
-    params = {
-      Document: {
-        Bytes: buffer
-      },
-      FeatureTypes: ['TABLES', 'FORMS']
-    };
+    // Use first image for Textract
+    documentBytes = Buffer.from(images[0], 'base64');
   }
   
+  const command = new AnalyzeDocumentCommand({
+    Document: {
+      Bytes: documentBytes
+    },
+    FeatureTypes: ['TABLES', 'FORMS']
+  });
+  
   // Call Textract
-  const response = await textract.analyzeDocument(params).promise();
+  const response = await textractClient.send(command);
   
   return response;
 }
