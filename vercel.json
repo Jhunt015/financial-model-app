@@ -3,38 +3,20 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/analyze-document.js": {
-      "maxDuration": 300
-    },
-    "api/analyze-simple.js": {
-      "maxDuration": 300
-    },
-    "api/analyze-vision.js": {
-      "maxDuration": 300
-    },
-    "api/analyze-text-only.js": {
-      "maxDuration": 300
-    },
-    "api/analyze-hybrid.js": {
-      "maxDuration": 300
-    },
-    "api/analyze-hybrid-simple.js": {
+    "api/analyze-textract-v3.js": {
       "maxDuration": 300
     },
     "api/analyze-intelligence.js": {
       "maxDuration": 300
     },
-    "api/analyze-textract.js": {
+    "api/analyze-hybrid-simple.js": {
       "maxDuration": 300
     },
-    "api/analyze-textract-v3.js": {
+    "api/analyze-text-only.js": {
       "maxDuration": 300
     },
     "api/analyze-debug.js": {
       "maxDuration": 300
-    },
-    "api/test-aws.js": {
-      "maxDuration": 60
     },
     "api/test.js": {
       "maxDuration": 60
