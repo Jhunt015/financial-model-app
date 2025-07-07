@@ -719,8 +719,8 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
     console.log(`PDF loaded: ${pdf.numPages} pages`);
     
     const images = [];
-    // For OpenAI Vision, use more pages for better analysis; others limit to reduce payload size
-    const maxPages = service === 'openai-vision' ? Math.min(pdf.numPages, 20) : Math.min(pdf.numPages, 5);
+    // For OpenAI Vision, use up to 50 pages for comprehensive analysis; others limit to reduce payload size
+    const maxPages = service === 'openai-vision' ? Math.min(pdf.numPages, 50) : Math.min(pdf.numPages, 5);
     
     console.log(`Will process ${maxPages} pages for ${service} analysis`);
     
@@ -764,16 +764,22 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
     // Check if payload is too large for Vercel (more lenient for OpenAI Vision)
     const maxSizeMB = service === 'openai-vision' ? 20 : 10;
     if (totalSizeMB > maxSizeMB) {
-      if (service === 'openai-vision' && images.length > 10) {
-        // Try with fewer pages for OpenAI Vision
-        console.log(`⚠️ Payload too large (${totalSizeMB.toFixed(2)}MB), retrying with first 10 pages...`);
-        const reducedImages = images.slice(0, 10);
-        const reducedSizeMB = reducedImages.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024;
-        console.log(`Reduced payload size: ${reducedSizeMB.toFixed(2)} MB`);
+      if (service === 'openai-vision' && images.length > 15) {
+        // Try with fewer pages for OpenAI Vision - progressive reduction
+        const reductionSteps = [30, 20, 15, 10];
         
-        if (reducedSizeMB <= maxSizeMB) {
-          const response = await analyzePDFWithImages(file, reducedImages, service, setExtractedData);
-          return response;
+        for (const pageLimit of reductionSteps) {
+          if (images.length > pageLimit) {
+            console.log(`⚠️ Payload too large (${totalSizeMB.toFixed(2)}MB), retrying with first ${pageLimit} pages...`);
+            const reducedImages = images.slice(0, pageLimit);
+            const reducedSizeMB = reducedImages.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024;
+            console.log(`Reduced payload size: ${reducedSizeMB.toFixed(2)} MB`);
+            
+            if (reducedSizeMB <= maxSizeMB) {
+              const response = await analyzePDFWithImages(file, reducedImages, service, setExtractedData);
+              return response;
+            }
+          }
         }
       }
       
