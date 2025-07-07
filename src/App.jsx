@@ -3624,10 +3624,10 @@ function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
           </button>
         </div>
         
-        {/* Debug Panel */}
-        <div className="mt-12 bg-gray-50 rounded-lg p-6">
+        {/* COMPREHENSIVE EXTRACTION DEBUG ANALYSIS */}
+        <div className="mt-12 bg-red-50 rounded-lg p-6 border-2 border-red-200">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900">🔧 Debug Information</h2>
+            <h2 className="text-xl font-bold text-red-800">🚨 COMPREHENSIVE EXTRACTION DEBUG ANALYSIS 🚨</h2>
             <button 
               onClick={() => {
                 const debugData = {
@@ -3641,60 +3641,174 @@ function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
                     priceSource,
                     estimationMethod
                   },
-                  businessAnalysis
+                  businessAnalysis,
+                  rawMetadata: financialData.metadata
                 };
                 console.log('=== COMPLETE DEBUG DATA ===', debugData);
                 navigator.clipboard.writeText(JSON.stringify(debugData, null, 2));
                 alert('Debug data copied to clipboard and logged to console!');
               }}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-bold"
             >
-              Copy Debug Data
+              📋 Copy Complete Debug Data
             </button>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Raw Financial Data */}
-            <div className="bg-white rounded p-4">
-              <h3 className="font-bold text-gray-700 mb-2">📊 Extracted Financial Data</h3>
-              <div className="text-xs font-mono bg-gray-100 p-2 rounded max-h-60 overflow-y-auto">
-                <pre>{JSON.stringify(financialData.statements, null, 2)}</pre>
+          {/* EXTRACTION SUMMARY */}
+          <div className="mb-6 p-4 bg-white rounded border">
+            <h3 className="font-bold text-gray-800 mb-3">📊 EXTRACTION SUMMARY</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div className="p-3 bg-blue-50 rounded">
+                <div className="font-semibold text-blue-800">Extraction Method</div>
+                <div className="text-blue-600">{financialData.metadata?.extractionMethod || 'Unknown'}</div>
+              </div>
+              <div className="p-3 bg-green-50 rounded">
+                <div className="font-semibold text-green-800">Confidence</div>
+                <div className="text-green-600">{Math.round((financialData.metadata?.confidence || 0) * 100)}%</div>
+              </div>
+              <div className="p-3 bg-purple-50 rounded">
+                <div className="font-semibold text-purple-800">Tables Found</div>
+                <div className="text-purple-600">{financialData.metadata?.tablesExtracted || 0}</div>
+              </div>
+              <div className="p-3 bg-orange-50 rounded">
+                <div className="font-semibold text-orange-800">Business Type</div>
+                <div className="text-orange-600">{financialData.metadata?.businessType || 'Unknown'}</div>
               </div>
             </div>
-            
-            {/* API Response */}
-            <div className="bg-white rounded p-4">
-              <h3 className="font-bold text-gray-700 mb-2">🤖 AI Analysis Response</h3>
-              <div className="text-xs font-mono bg-gray-100 p-2 rounded max-h-60 overflow-y-auto">
-                <pre>{JSON.stringify({
-                  modelInfo: financialData.modelInfo,
-                  businessType: financialData.businessType,
-                  purchasePrice: financialData.purchasePrice,
-                  quickStats: financialData.quickStats
-                }, null, 2)}</pre>
+          </div>
+
+          {/* CRITICAL FIELDS STATUS */}
+          <div className="mb-6 p-4 bg-white rounded border">
+            <h3 className="font-bold text-gray-800 mb-3">🎯 CRITICAL FIELDS STATUS</h3>
+            <div className="space-y-2 text-sm">
+              <div className={`flex items-center ${financialData.metadata?.businessName ? 'text-green-700' : 'text-red-700'}`}>
+                <span className="mr-2">{financialData.metadata?.businessName ? '✅' : '❌'}</span>
+                <span className="font-medium">Business Name:</span>
+                <span className="ml-2">{financialData.metadata?.businessName || 'NOT FOUND'}</span>
+              </div>
+              <div className={`flex items-center ${financialData.metadata?.purchasePrice ? 'text-green-700' : 'text-red-700'}`}>
+                <span className="mr-2">{financialData.metadata?.purchasePrice ? '✅' : '❌'}</span>
+                <span className="font-medium">Purchase Price:</span>
+                <span className="ml-2">
+                  {financialData.metadata?.purchasePrice ? 
+                    formatCurrency(financialData.metadata.purchasePrice) : 
+                    'NOT FOUND'
+                  }
+                </span>
+              </div>
+              <div className={`flex items-center ${financialData.metadata?.priceSource !== 'estimated' ? 'text-green-700' : 'text-yellow-700'}`}>
+                <span className="mr-2">{financialData.metadata?.priceSource !== 'estimated' ? '✅' : '⚠️'}</span>
+                <span className="font-medium">Price Source:</span>
+                <span className="ml-2">{financialData.metadata?.priceSource || 'unknown'}</span>
               </div>
             </div>
-            
-            {/* Calculation Details */}
-            <div className="bg-white rounded p-4">
-              <h3 className="font-bold text-gray-700 mb-2">🧮 Key Calculations</h3>
-              <div className="space-y-2 text-sm">
-                <div>TTM Revenue: <span className="font-mono">{formatCurrency(ttmRevenue)}</span></div>
-                <div>TTM EBITDA: <span className="font-mono">{formatCurrency(ttmEBITDA)}</span></div>
-                <div>EBITDA Margin: <span className="font-mono">{formatPercent(ttmEBITDA / ttmRevenue)}</span></div>
-                <div>Purchase Price: <span className="font-mono">{formatCurrency(purchasePrice)}</span></div>
-                <div>SDE Multiple: <span className="font-mono">{sdeMultiple.toFixed(2)}x</span></div>
-                <div>Price Source: <span className="font-mono">{priceSource}</span></div>
-                <div>Estimation Method: <span className="font-mono">{estimationMethod}</span></div>
+          </div>
+
+          {/* FINANCIAL DATA BY PERIOD */}
+          <div className="mb-6 p-4 bg-white rounded border">
+            <h3 className="font-bold text-gray-800 mb-3">💰 FINANCIAL DATA BY PERIOD</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left p-2">Metric</th>
+                    {financialData.periods?.map(period => (
+                      <th key={period} className="text-right p-2">{period}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b">
+                    <td className="p-2 font-medium text-blue-700">Revenue</td>
+                    {financialData.periods?.map(period => (
+                      <td key={period} className={`text-right p-2 ${financialData.statements.incomeStatement.revenue[period] ? 'text-green-600' : 'text-red-500'}`}>
+                        {financialData.statements.incomeStatement.revenue[period] ? 
+                          formatCurrency(financialData.statements.incomeStatement.revenue[period]) : 
+                          'NO DATA'
+                        }
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b">
+                    <td className="p-2 font-medium text-purple-700">EBITDA</td>
+                    {financialData.periods?.map(period => (
+                      <td key={period} className={`text-right p-2 ${financialData.statements.incomeStatement.ebitda[period] ? 'text-green-600' : 'text-red-500'}`}>
+                        {financialData.statements.incomeStatement.ebitda[period] ? 
+                          formatCurrency(financialData.statements.incomeStatement.ebitda[period]) : 
+                          'NO DATA'
+                        }
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="p-2 font-medium text-green-700">Gross Profit</td>
+                    {financialData.periods?.map(period => (
+                      <td key={period} className={`text-right p-2 ${financialData.statements.incomeStatement.grossProfit[period] ? 'text-green-600' : 'text-red-500'}`}>
+                        {financialData.statements.incomeStatement.grossProfit[period] ? 
+                          formatCurrency(financialData.statements.incomeStatement.grossProfit[period]) : 
+                          'NO DATA'
+                        }
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* KEY CALCULATIONS */}
+          <div className="mb-6 p-4 bg-white rounded border">
+            <h3 className="font-bold text-gray-800 mb-3">🧮 KEY CALCULATIONS</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <div className="font-medium text-blue-700">TTM Revenue</div>
+                <div className="font-mono text-lg">{formatCurrency(ttmRevenue)}</div>
+              </div>
+              <div>
+                <div className="font-medium text-purple-700">TTM EBITDA</div>
+                <div className="font-mono text-lg">{formatCurrency(ttmEBITDA)}</div>
+              </div>
+              <div>
+                <div className="font-medium text-green-700">EBITDA Margin</div>
+                <div className="font-mono text-lg">{formatPercent(ttmEBITDA / ttmRevenue)}</div>
+              </div>
+              <div>
+                <div className="font-medium text-red-700">SDE Multiple</div>
+                <div className="font-mono text-lg">{sdeMultiple.toFixed(2)}x</div>
               </div>
             </div>
-            
-            {/* Business Analysis */}
-            <div className="bg-white rounded p-4">
-              <h3 className="font-bold text-gray-700 mb-2">🏢 Business Analysis</h3>
-              <div className="text-xs font-mono bg-gray-100 p-2 rounded max-h-60 overflow-y-auto">
-                <pre>{JSON.stringify(businessAnalysis, null, 2)}</pre>
-              </div>
+          </div>
+
+          {/* RAW API RESPONSE */}
+          <div className="mb-6 p-4 bg-black rounded border">
+            <h3 className="font-bold text-green-400 mb-3">💻 RAW API RESPONSE DATA</h3>
+            <div className="text-xs font-mono text-green-300 bg-gray-900 p-3 rounded max-h-96 overflow-y-auto">
+              <pre>{JSON.stringify({
+                rawApiResponse: financialData.metadata?.rawApiResponse,
+                extractionMethod: financialData.metadata?.extractionMethod,
+                debugInfo: financialData.metadata?.debugInfo,
+                statements: financialData.statements,
+                metadata: financialData.metadata
+              }, null, 2)}</pre>
+            </div>
+          </div>
+
+          {/* RECOMMENDATIONS */}
+          <div className="p-4 bg-yellow-50 rounded border border-yellow-200">
+            <h3 className="font-bold text-yellow-800 mb-3">💡 DEBUGGING RECOMMENDATIONS</h3>
+            <div className="space-y-2 text-sm text-yellow-700">
+              {!financialData.metadata?.purchasePrice && (
+                <div>• Purchase price not found - check for "Asking Price", "Sale Price", or "Investment Required" terms</div>
+              )}
+              {!financialData.metadata?.businessName && (
+                <div>• Business name not extracted - verify company name is clearly stated in document</div>
+              )}
+              {financialData.metadata?.priceSource === 'estimated' && (
+                <div>• Purchase price was estimated, not extracted - improve price detection patterns</div>
+              )}
+              {(financialData.metadata?.confidence || 0) < 0.8 && (
+                <div>• Low extraction confidence - consider document quality or different analysis service</div>
+              )}
             </div>
           </div>
         </div>
@@ -4998,7 +5112,7 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
                         }}
                         className="text-xs bg-red-100 hover:bg-red-200 px-3 py-1 rounded text-red-700 font-bold mr-2"
                       >
-                        🐛 COMPREHENSIVE DEBUG VIEW
+                        🐛 HIDE/SHOW COMPREHENSIVE DEBUG
                       </button>
                       
                       <button
@@ -5011,8 +5125,8 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
                         🔍 Toggle Raw Extracted Data
                       </button>
                       
-                      {/* Comprehensive Debug View */}
-                      <div id="comprehensiveDebugView" style={{display: 'none'}} className="mt-3 p-4 bg-red-50 rounded-lg border-2 border-red-200 text-xs">
+                      {/* Comprehensive Debug View - NOW VISIBLE BY DEFAULT */}
+                      <div id="comprehensiveDebugView" className="mt-3 p-4 bg-red-50 rounded-lg border-2 border-red-200 text-xs">
                         <div className="font-bold text-red-800 mb-4 text-center text-sm">
                           🚨 COMPREHENSIVE EXTRACTION DEBUG ANALYSIS 🚨
                         </div>
