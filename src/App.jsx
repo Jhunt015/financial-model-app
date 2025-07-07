@@ -813,12 +813,14 @@ const analyzeDocumentWithTextExtraction = async (file) => {
 };
 
 // Enhanced API analysis function with service selection
-const analyzePDFWithImages = async (file, images, service = 'openai', setExtractedData) => {
+const analyzePDFWithImages = async (file, images, service = 'pdf-text-openai', setExtractedData) => {
   // Service URLs mapping
   const serviceUrls = {
-    openai: '/api/analyze-openai',
-    claude: '/api/analyze-claude', 
-    textract: '/api/analyze-textract-simple'
+    'pdf-text-openai': '/api/analyze-pdf-text',
+    'pdf-text-claude': '/api/analyze-pdf-text',
+    'openai-vision': '/api/analyze-openai',
+    'claude-vision': '/api/analyze-claude', 
+    'textract': '/api/analyze-textract'
   };
   
   const primaryUrl = serviceUrls[service];
@@ -845,7 +847,8 @@ const analyzePDFWithImages = async (file, images, service = 'openai', setExtract
       body: JSON.stringify({
         fileName: file.name,
         images: images,
-        fileData: fileData
+        fileData: fileData,
+        aiService: service.includes('pdf-text') ? service.split('-')[2] : undefined
       })
     });
     
@@ -902,7 +905,8 @@ const analyzePDFWithIntelligenceAPI = async (file, images, fileData) => {
       body: JSON.stringify({
         fileName: file.name,
         images: images,
-        fileData: fileData
+        fileData: fileData,
+        aiService: service.includes('pdf-text') ? service.split('-')[2] : undefined
       })
     });
     
@@ -4457,42 +4461,68 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
               <Settings className="h-6 w-6 text-blue-600" />
               <h3 className="text-lg font-semibold text-gray-800">Choose Analysis Service</h3>
             </div>
-            <div className="flex justify-center space-x-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
               <button
-                onClick={() => setAnalysisService('openai')}
-                className={`px-6 py-3 rounded-lg font-medium transition-all border-2 ${
-                  analysisService === 'openai'
+                onClick={() => setAnalysisService('pdf-text-openai')}
+                className={`px-4 py-3 rounded-lg font-medium transition-all border-2 text-sm ${
+                  analysisService === 'pdf-text-openai'
                     ? 'bg-blue-600 text-white border-blue-600 shadow-lg transform scale-105'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:bg-blue-50'
                 }`}
               >
-                🤖 OpenAI 4o
+                📄 OpenAI PDF
               </button>
               <button
-                onClick={() => setAnalysisService('claude')}
-                className={`px-6 py-3 rounded-lg font-medium transition-all border-2 ${
-                  analysisService === 'claude'
+                onClick={() => setAnalysisService('pdf-text-claude')}
+                className={`px-4 py-3 rounded-lg font-medium transition-all border-2 text-sm ${
+                  analysisService === 'pdf-text-claude'
                     ? 'bg-purple-600 text-white border-purple-600 shadow-lg transform scale-105'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400 hover:bg-purple-50'
                 }`}
               >
-                🧠 Claude Opus 4
+                📄 Claude PDF
               </button>
               <button
                 onClick={() => setAnalysisService('textract')}
-                className={`px-6 py-3 rounded-lg font-medium transition-all border-2 ${
+                className={`px-4 py-3 rounded-lg font-medium transition-all border-2 text-sm ${
                   analysisService === 'textract'
                     ? 'bg-orange-600 text-white border-orange-600 shadow-lg transform scale-105'
                     : 'bg-white text-gray-700 border-gray-300 hover:border-orange-400 hover:bg-orange-50'
                 }`}
               >
-                ☁️ AWS Textract
+                ☁️ AWS PDF
+              </button>
+              <button
+                onClick={() => setAnalysisService('openai-vision')}
+                className={`px-4 py-3 rounded-lg font-medium transition-all border-2 text-sm ${
+                  analysisService === 'openai-vision'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-lg transform scale-105'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                }`}
+              >
+                👁️ OpenAI Vision
+              </button>
+              <button
+                onClick={() => setAnalysisService('claude-vision')}
+                className={`px-4 py-3 rounded-lg font-medium transition-all border-2 text-sm ${
+                  analysisService === 'claude-vision'
+                    ? 'bg-purple-600 text-white border-purple-600 shadow-lg transform scale-105'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400 hover:bg-purple-50'
+                }`}
+              >
+                👁️ Claude Vision
               </button>
             </div>
             <div className="mt-4 p-3 bg-blue-100 rounded-lg">
               <p className="text-sm text-blue-800 font-medium">
-                🔍 Selected: {analysisService === 'openai' ? 'OpenAI GPT-4o Vision Analysis' : 
-                            analysisService === 'claude' ? 'Claude Opus 4 Vision Analysis' : 'AWS Textract + AI Analysis'}
+                🔍 Selected: {
+                  analysisService === 'pdf-text-openai' ? 'OpenAI 4o PDF Text Analysis' :
+                  analysisService === 'pdf-text-claude' ? 'Claude 3.5 Sonnet PDF Text Analysis' :
+                  analysisService === 'textract' ? 'AWS Textract Direct PDF Analysis' :
+                  analysisService === 'openai-vision' ? 'OpenAI 4o Vision (Image) Analysis' :
+                  analysisService === 'claude-vision' ? 'Claude 3.5 Sonnet Vision (Image) Analysis' :
+                  'Unknown Service'
+                }
               </p>
             </div>
           </div>
@@ -4664,7 +4694,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState('landing');
   const [financialData, setFinancialData] = useState(null);
   const [debtServiceModel, setDebtServiceModel] = useState(null);
-  const [analysisService, setAnalysisService] = useState('openai'); // 'openai', 'claude', 'textract'
+  const [analysisService, setAnalysisService] = useState('pdf-text-openai'); // 'pdf-text-openai', 'pdf-text-claude', 'textract', 'openai-vision', 'claude-vision'
 
   // Check if we're on the auth callback route or model route
   useEffect(() => {

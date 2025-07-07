@@ -17,6 +17,9 @@
     },
     "api/analyze-claude.js": {
       "maxDuration": 300
+    },
+    "api/analyze-pdf-text.js": {
+      "maxDuration": 300
     }
   },
   "routes": [
