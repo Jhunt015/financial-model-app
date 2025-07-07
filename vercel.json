@@ -6,23 +6,17 @@
     "api/analyze-textract.js": {
       "maxDuration": 300
     },
+    "api/analyze-textract-simple.js": {
+      "maxDuration": 300
+    },
     "api/analyze-intelligence.js": {
       "maxDuration": 300
     },
-    "api/analyze-hybrid-simple.js": {
+    "api/analyze-openai.js": {
       "maxDuration": 300
     },
-    "api/analyze-text-only.js": {
+    "api/analyze-claude.js": {
       "maxDuration": 300
-    },
-    "api/analyze-debug.js": {
-      "maxDuration": 300
-    },
-    "api/aws-test.js": {
-      "maxDuration": 60
-    },
-    "api/test.js": {
-      "maxDuration": 60
     }
   },
   "routes": [
