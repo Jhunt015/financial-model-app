@@ -815,7 +815,7 @@ const analyzeDocumentWithTextExtraction = async (file) => {
 // Enhanced API analysis function with AWS Textract support
 const analyzePDFWithImages = async (file, images) => {
   // Try AWS Textract first for better extraction (using working endpoint)
-  const textractUrl = '/api/analyze-textract';
+  const textractUrl = '/api/analyze-textract-simple';
   const fallbackUrl = '/api/analyze-intelligence';
   
   // Get base64 file data for processing
