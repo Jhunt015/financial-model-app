@@ -1056,7 +1056,8 @@ const analyzeExtractionCompleteness = (data) => {
     ...summary,
     detailedBreakdown: expectedFields,
     extractionScores: scores,
-    totalDataPoints: dataPoints
+    totalDataPoints: dataPoints,
+    rawApiResponse: data // Store complete API response for debugging
   };
 };
 
@@ -4965,13 +4966,129 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
                     
                     {/* Recommendations */}
                     {extractedData.recommendations && extractedData.recommendations.length > 0 && (
-                      <div className="text-xs">
+                      <div className="text-xs mb-3">
                         <div className="font-semibold text-blue-800 mb-1">💡 Recommendations:</div>
                         {extractedData.recommendations.map((rec, index) => (
                           <div key={index} className="text-blue-600 mb-1">{rec}</div>
                         ))}
                       </div>
                     )}
+                    
+                    {/* Raw Data Toggle */}
+                    <div className="border-t border-blue-200 pt-3">
+                      <button
+                        onClick={() => {
+                          const rawDataDiv = document.getElementById('rawDataDisplay');
+                          rawDataDiv.style.display = rawDataDiv.style.display === 'none' ? 'block' : 'none';
+                        }}
+                        className="text-xs bg-blue-100 hover:bg-blue-200 px-3 py-1 rounded text-blue-700 font-medium"
+                      >
+                        🔍 Toggle Raw Extracted Data
+                      </button>
+                      
+                      <div id="rawDataDisplay" style={{display: 'none'}} className="mt-3 p-3 bg-gray-50 rounded border text-xs">
+                        <div className="font-semibold text-gray-800 mb-2">📋 Complete Raw Extraction Data:</div>
+                        
+                        {/* Business Information */}
+                        {extractedData.detailedBreakdown?.businessInfo && (
+                          <div className="mb-3">
+                            <div className="font-semibold text-blue-700 mb-1">🏢 Business Information:</div>
+                            <div className="pl-3 space-y-1 text-gray-700">
+                              {Object.entries(extractedData.detailedBreakdown.businessInfo).map(([key, value]) => (
+                                <div key={key}>
+                                  <span className="font-medium">{key}:</span> {value || 'Not found'}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Financial Metrics */}
+                        {extractedData.detailedBreakdown?.financialMetrics && (
+                          <div className="mb-3">
+                            <div className="font-semibold text-green-700 mb-1">💰 Financial Metrics:</div>
+                            <div className="pl-3 space-y-2 text-gray-700">
+                              {Object.entries(extractedData.detailedBreakdown.financialMetrics).map(([metric, periods]) => (
+                                <div key={metric}>
+                                  <div className="font-medium text-green-600">{metric}:</div>
+                                  <div className="pl-3">
+                                    {periods && typeof periods === 'object' ? 
+                                      Object.entries(periods).map(([period, value]) => (
+                                        <div key={period}>
+                                          {period}: {value !== null && value !== undefined && !isNaN(value) ? 
+                                            `$${(value / 1000000).toFixed(2)}M` : 'No data'}
+                                        </div>
+                                      )) : 'No data'
+                                    }
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Valuation Data */}
+                        {extractedData.detailedBreakdown?.valuation && (
+                          <div className="mb-3">
+                            <div className="font-semibold text-purple-700 mb-1">💵 Valuation Information:</div>
+                            <div className="pl-3 space-y-1 text-gray-700">
+                              {Object.entries(extractedData.detailedBreakdown.valuation).map(([key, value]) => (
+                                <div key={key}>
+                                  <span className="font-medium">{key}:</span> {
+                                    key === 'purchasePrice' && value ? 
+                                      `$${(value / 1000000).toFixed(2)}M` : 
+                                      (value || 'Not found')
+                                  }
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Periods */}
+                        {extractedData.detailedBreakdown?.periods && (
+                          <div className="mb-3">
+                            <div className="font-semibold text-orange-700 mb-1">📅 Time Periods Found:</div>
+                            <div className="pl-3 text-gray-700">
+                              {extractedData.detailedBreakdown.periods.length > 0 ? 
+                                extractedData.detailedBreakdown.periods.join(', ') : 'None detected'}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Additional Data */}
+                        {extractedData.detailedBreakdown?.additionalData && (
+                          <div className="mb-3">
+                            <div className="font-semibold text-indigo-700 mb-1">📊 Additional Data:</div>
+                            <div className="pl-3 space-y-1 text-gray-700">
+                              {Object.entries(extractedData.detailedBreakdown.additionalData).map(([key, value]) => (
+                                <div key={key}>
+                                  <span className="font-medium">{key}:</span> {value || 'Not found'}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Parsed Data */}
+                        <div className="mt-4 border-t border-gray-300 pt-3">
+                          <div className="font-semibold text-gray-800 mb-2">🗂️ Parsed Financial Data:</div>
+                          <pre className="bg-gray-100 p-2 rounded text-xs overflow-auto max-h-64 text-gray-600">
+                            {JSON.stringify(extractedData.detailedBreakdown, null, 2)}
+                          </pre>
+                        </div>
+                        
+                        {/* Complete Raw API Response */}
+                        {extractedData.rawApiResponse && (
+                          <div className="mt-4 border-t border-gray-300 pt-3">
+                            <div className="font-semibold text-gray-800 mb-2">🔧 Complete Raw API Response:</div>
+                            <pre className="bg-gray-800 text-green-400 p-2 rounded text-xs overflow-auto max-h-96 font-mono">
+                              {JSON.stringify(extractedData.rawApiResponse, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
