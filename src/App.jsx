@@ -719,8 +719,8 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
     console.log(`PDF loaded: ${pdf.numPages} pages`);
     
     const images = [];
-    // For OpenAI Vision, use up to 50 pages for comprehensive analysis; others limit to reduce payload size
-    const maxPages = service === 'openai-vision' ? Math.min(pdf.numPages, 50) : Math.min(pdf.numPages, 5);
+    // For OpenAI Vision, use fewer pages initially to avoid 413 errors; others limit to reduce payload size
+    const maxPages = service === 'openai-vision' ? Math.min(pdf.numPages, 30) : Math.min(pdf.numPages, 5);
     
     console.log(`Will process ${maxPages} pages for ${service} analysis`);
     
@@ -729,8 +729,8 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
       console.log(`Converting page ${i}/${maxPages} to image...`);
       
       const page = await pdf.getPage(i);
-      // Lower scale for OpenAI Vision to reduce file size (it can handle lower resolution well)
-      const scale = service === 'openai-vision' ? 1.2 : 1.5;
+      // Much lower scale for OpenAI Vision to reduce file size significantly
+      const scale = service === 'openai-vision' ? 0.8 : 1.5; // Very low scale for vision to avoid 413 errors
       const viewport = page.getViewport({ scale: scale });
       
       const canvas = document.createElement('canvas');
@@ -743,8 +743,8 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
         viewport: viewport 
       }).promise;
       
-      // Convert to JPEG with higher compression for smaller size (lower quality for OpenAI Vision)
-      const compressionQuality = service === 'openai-vision' ? 0.4 : 0.6; // More compression for vision
+      // Convert to JPEG with higher compression for smaller size (much lower quality for OpenAI Vision to avoid 413 errors)
+      const compressionQuality = service === 'openai-vision' ? 0.2 : 0.6; // Very high compression for vision
       const base64 = canvas.toDataURL('image/jpeg', compressionQuality).split(',')[1];
       images.push(base64);
       
@@ -761,8 +761,8 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
     const totalSizeMB = images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024;
     console.log(`Total image data size: ${totalSizeMB.toFixed(2)} MB`);
     
-    // Check if payload is too large for Vercel (more lenient for OpenAI Vision)
-    const maxSizeMB = service === 'openai-vision' ? 20 : 10;
+    // Check if payload is too large for Vercel (smaller limit for OpenAI Vision due to 413 errors)
+    const maxSizeMB = service === 'openai-vision' ? 10 : 10;
     if (totalSizeMB > maxSizeMB) {
       if (service === 'openai-vision' && images.length > 15) {
         // Try with fewer pages for OpenAI Vision - progressive reduction
@@ -910,7 +910,7 @@ const analyzePDFWithImages = async (file, images, service = 'pdf-text-openai', s
       if (errorText.includes('AWS credentials')) {
         console.log('⚠️ AWS Textract not configured, falling back to AI-only analysis...');
         // Fall back to intelligence API
-        return await analyzePDFWithIntelligenceAPI(file, images, fileData);
+        return await analyzePDFWithIntelligenceAPI(file, images, fileData, service);
       }
       throw new Error(`API request failed: ${response.status}`);
     }
@@ -935,12 +935,12 @@ const analyzePDFWithImages = async (file, images, service = 'pdf-text-openai', s
   } catch (error) {
     console.error(`${service.toUpperCase()} API error, falling back:`, error);
     // Fall back to intelligence API
-    return await analyzePDFWithIntelligenceAPI(file, images, fileData);
+    return await analyzePDFWithIntelligenceAPI(file, images, fileData, service);
   }
 };
 
 // Fallback to intelligence API
-const analyzePDFWithIntelligenceAPI = async (file, images, fileData) => {
+const analyzePDFWithIntelligenceAPI = async (file, images, fileData, service = 'intelligence') => {
   const apiUrl = '/api/analyze-intelligence';
   
   try {
