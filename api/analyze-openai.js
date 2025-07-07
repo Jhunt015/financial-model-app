@@ -15,9 +15,16 @@ export default async function handler(req, res) {
 
   try {
     console.log('🔍 Starting OpenAI 4o analysis');
+    console.log('📊 Request details:', {
+      fileName,
+      imageCount: req.body.images?.length || 0,
+      hasFileData: !!req.body.fileData,
+      requestSize: JSON.stringify(req.body).length
+    });
     
     // Check API key
     if (!process.env.OPENAI_API_KEY) {
+      console.error('❌ OpenAI API key not configured');
       return res.status(500).json({
         error: 'OpenAI API key not configured',
         message: 'Missing OPENAI_API_KEY environment variable'
@@ -27,14 +34,19 @@ export default async function handler(req, res) {
     const { fileData, fileName, images } = req.body;
 
     if (!images || images.length === 0) {
+      console.error('❌ No images provided for analysis');
       return res.status(400).json({
         error: 'No images provided',
         message: 'OpenAI vision analysis requires document images'
       });
     }
 
-    console.log(`📄 Analyzing document with OpenAI 4o (${images.length} pages)...`);
+    console.log(`📄 Analyzing document: ${fileName} with OpenAI 4o (${images.length} pages)...`);
+    console.log(`📏 Total payload size: ${(JSON.stringify(req.body).length / 1024 / 1024).toFixed(2)} MB`);
+    
     const analysis = await performOpenAIAnalysis(images, fileName);
+    
+    console.log('📊 Building response structure...');
     
     const result = {
       textractData: {
@@ -48,10 +60,26 @@ export default async function handler(req, res) {
       },
       intelligence: analysis.narrative || 'OpenAI 4o analysis complete',
       structuredData: analysis.structuredData || {},
-      confidence: analysis.confidence || 85
+      confidence: analysis.confidence || 85,
+      // Add raw response for debugging
+      rawResponse: analysis,
+      debugInfo: {
+        extractionMethod: 'openai-4o-vision',
+        processingTime: new Date().toISOString(),
+        imageCount: images.length,
+        hasRawData: !!analysis
+      }
     };
 
     console.log('✅ OpenAI 4o analysis complete');
+    console.log('📊 Final result structure:', {
+      hasTextractData: !!result.textractData,
+      hasFinancialData: !!result.textractData.financialData,
+      hasStructuredData: !!result.structuredData,
+      financialDataKeys: Object.keys(result.textractData.financialData),
+      structuredDataKeys: Object.keys(result.structuredData),
+      confidence: result.confidence
+    });
     
     return res.status(200).json({
       success: true,
@@ -80,92 +108,54 @@ export default async function handler(req, res) {
  * Enhanced OpenAI 4o analysis for financial documents
  */
 async function performOpenAIAnalysis(images, fileName) {
-  const prompt = `You are an expert financial analyst. Analyze this business financial document and extract ALL numerical data with extreme precision.
+  const prompt = `You are a financial analyst specializing in business acquisitions. Analyze this document and extract key financial data.
 
-CRITICAL REQUIREMENTS:
-1. Extract EVERY numerical value you can find (revenue, expenses, profits, etc.)
-2. Include the year/period for each value
-3. Look for patterns like "$5.2M", "$5,200,000", "5.2 million", percentages, etc.
-4. Identify financial statement types (P&L, Balance Sheet, etc.)
-5. Extract business information (name, type, description)
-6. **PRIORITY**: Find purchase/asking prices with these exact patterns:
-   - "Asking Price", "Purchase Price", "Sale Price", "Transaction Value"
-   - "Listed at", "Priced at", "Offering Price", "Acquisition Price"
-   - "Target Price", "Expected Sale Price", "Investment Required"
-   - "Total Investment", "Business Value", "Enterprise Value"
-   - Look for standalone price mentions near business summaries
+FOCUS ON THESE CRITICAL ITEMS:
+1. **PURCHASE/ASKING PRICE** (HIGHEST PRIORITY)
+   Search for: "Asking Price", "Purchase Price", "Sale Price", "Investment Required", "Enterprise Value", "Transaction Value", "Business Value", "Priced at", "Listed for", "Available for"
+   
+2. **REVENUE by Year** 
+   Look for: Total Revenue, Net Revenue, Sales, Gross Revenue, Commission Income
+   
+3. **EBITDA by Year**
+   Look for: EBITDA, Adjusted EBITDA, Recast EBITDA, SDE (Seller's Discretionary Earnings), Cash Flow
+   
+4. **BUSINESS INFORMATION**
+   - Company name (exact as written)
+   - Industry/business type
+   - Brief description
 
-REQUIRED JSON OUTPUT:
+RETURN ONLY THIS JSON (no other text):
 {
   "financialData": {
-    "periods": ["2021", "2022", "2023", "2024", "TTM"],
-    "revenue": {
-      "2021": [number or null],
-      "2022": [number or null], 
-      "2023": [number or null],
-      "2024": [number or null],
-      "TTM": [number or null]
-    },
-    "grossProfit": {
-      "2021": [number or null],
-      "2022": [number or null],
-      "2023": [number or null], 
-      "2024": [number or null],
-      "TTM": [number or null]
-    },
-    "ebitda": {
-      "2021": [number or null],
-      "2022": [number or null],
-      "2023": [number or null],
-      "2024": [number or null], 
-      "TTM": [number or null]
-    },
-    "operatingExpenses": {
-      "2021": [number or null],
-      "2022": [number or null],
-      "2023": [number or null],
-      "2024": [number or null],
-      "TTM": [number or null]
-    },
-    "netIncome": {
-      "2021": [number or null],
-      "2022": [number or null],
-      "2023": [number or null],
-      "2024": [number or null],
-      "TTM": [number or null]
-    }
+    "periods": [],
+    "revenue": {},
+    "ebitda": {},
+    "grossProfit": {},
+    "operatingExpenses": {},
+    "netIncome": {}
   },
-  "tables": [
-    {
-      "type": "P&L" | "Balance Sheet" | "Cash Flow" | "Other",
-      "data": "summary of table contents",
-      "years": ["2021", "2022", "2023"],
-      "keyMetrics": ["revenue", "expenses", "profit"]
-    }
-  ],
   "structuredData": {
-    "purchasePrice": [number or null],
-    "priceSource": "extracted" | "estimated" | "not_found",
+    "purchasePrice": null,
+    "priceSource": "not_found",
     "businessInfo": {
-      "name": "[exact company name]",
-      "type": "[business type/industry]", 
-      "description": "[business description]"
-    },
-    "financialHighlights": [
-      "Key financial insight 1",
-      "Key financial insight 2"
-    ]
+      "name": "",
+      "type": "",
+      "description": ""
+    }
   },
-  "narrative": "[2-3 paragraph analysis of business and financial performance]",
-  "confidence": [1-100 confidence score]
+  "tables": [],
+  "narrative": "",
+  "confidence": 75
 }
 
-IMPORTANT CONVERSION RULES:
-- "$5.2M" or "$5.2 million" = 5200000
-- "5.2%" = 0.052
-- Always convert to actual numbers, not strings
-- If you see a range like "$5M-$7M", use the midpoint: 6000000
-- Include ALL financial data you can find, even if incomplete`;
+CRITICAL RULES:
+- Convert "$5.2M" to 5200000
+- Convert "5.2%" to 0.052 
+- Use null for missing data
+- Search every page for purchase price
+- Be thorough but focus on the key metrics above
+- Return valid JSON only`;
 
   try {
     const content = [
@@ -204,16 +194,75 @@ IMPORTANT CONVERSION RULES:
     const result = await response.json();
     const contentText = result.choices[0].message.content;
     
-    // Try to parse JSON from response
-    try {
-      const jsonMatch = contentText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return parsed;
+    console.log('📝 Raw OpenAI response length:', contentText.length, 'characters');
+    console.log('📝 Raw OpenAI response preview:', contentText.substring(0, 500) + '...');
+    
+    // Enhanced JSON extraction with multiple attempts
+    console.log('🔍 Attempting to extract JSON from OpenAI response...');
+    
+    let parsed = null;
+    const jsonExtractionAttempts = [
+      // Attempt 1: Find complete JSON object
+      () => {
+        const match = contentText.match(/\{[\s\S]*\}/);
+        if (match) {
+          console.log('✅ JSON extraction attempt 1: Found JSON pattern');
+          return JSON.parse(match[0]);
+        }
+        throw new Error('No JSON pattern found');
+      },
+      // Attempt 2: Find JSON between ```json blocks
+      () => {
+        const match = contentText.match(/```json\s*([\s\S]*?)\s*```/);
+        if (match) {
+          console.log('✅ JSON extraction attempt 2: Found JSON in code block');
+          return JSON.parse(match[1]);
+        }
+        throw new Error('No JSON code block found');
+      },
+      // Attempt 3: Find JSON between { and } with better regex
+      () => {
+        const startIndex = contentText.indexOf('{');
+        const endIndex = contentText.lastIndexOf('}');
+        if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+          const jsonStr = contentText.substring(startIndex, endIndex + 1);
+          console.log('✅ JSON extraction attempt 3: Found JSON by indices');
+          return JSON.parse(jsonStr);
+        }
+        throw new Error('No JSON boundaries found');
       }
-    } catch (parseError) {
-      console.error('JSON parse error:', parseError);
-      console.log('Raw response:', contentText);
+    ];
+    
+    for (let i = 0; i < jsonExtractionAttempts.length; i++) {
+      try {
+        parsed = jsonExtractionAttempts[i]();
+        console.log(`✅ Successfully parsed JSON on attempt ${i + 1}`);
+        console.log('📊 Parsed data keys:', Object.keys(parsed));
+        break;
+      } catch (parseError) {
+        console.warn(`⚠️ JSON extraction attempt ${i + 1} failed:`, parseError.message);
+      }
+    }
+    
+    if (!parsed) {
+      console.error('❌ All JSON extraction attempts failed');
+      console.log('📝 Full raw response for debugging:', contentText);
+    } else {
+      // Log extracted data details
+      console.log('📊 Extraction success details:', {
+        hasFinancialData: !!parsed.financialData,
+        hasStructuredData: !!parsed.structuredData,
+        hasTables: !!parsed.tables && parsed.tables.length > 0,
+        hasNarrative: !!parsed.narrative,
+        confidence: parsed.confidence,
+        financialDataPeriods: parsed.financialData?.periods?.length || 0,
+        purchasePrice: parsed.structuredData?.purchasePrice,
+        businessName: parsed.structuredData?.businessInfo?.name
+      });
+    }
+    
+    if (parsed) {
+      return parsed;
     }
 
     // Fallback: return basic structure with response text

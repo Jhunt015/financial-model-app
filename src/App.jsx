@@ -916,20 +916,35 @@ const analyzePDFWithImages = async (file, images, service = 'pdf-text-openai', s
     }
     
     const result = await response.json();
-    console.log(`🎉 ${service.toUpperCase()} analysis complete:`, result);
+    console.log(`🎉 ${service.toUpperCase()} analysis complete. Result keys:`, Object.keys(result));
+    console.log(`📊 Full API result structure:`, result);
     
     if (result.success && result.data) {
       console.log('✅ Tables extracted:', result.metadata?.tablesFound || 0);
       console.log('📊 Confidence score:', result.metadata?.confidence || 'unknown');
+      console.log('🔧 API data structure:', {
+        hasTextractData: !!result.data.textractData,
+        hasStructuredData: !!result.data.structuredData,
+        hasRawResponse: !!result.data.rawResponse,
+        hasDebugInfo: !!result.data.debugInfo,
+        textractDataKeys: result.data.textractData ? Object.keys(result.data.textractData) : [],
+        structuredDataKeys: result.data.structuredData ? Object.keys(result.data.structuredData) : []
+      });
       
       // Show comprehensive extracted data with analysis
       if (setExtractedData && result.data) {
+        console.log('🔍 Running extraction completeness analysis...');
         const comprehensiveData = analyzeExtractionCompleteness(result.data);
+        console.log('📈 Completeness analysis result:', comprehensiveData);
         setExtractedData(comprehensiveData);
       }
       
-      return processTextractResponse(result.data, file);
+      console.log('⚙️ About to call processTextractResponse...');
+      const processedResult = processTextractResponse(result.data, file);
+      console.log('✅ processTextractResponse completed:', processedResult);
+      return processedResult;
     } else {
+      console.error('❌ Analysis failed:', result.error);
       throw new Error(result.error || 'Failed to analyze document');
     }
   } catch (error) {
@@ -1239,15 +1254,41 @@ const validateAndMergeMetrics = (extractedMetrics, calculatedMetrics, revenue) =
 
 // Process Textract API response into our data format
 const processTextractResponse = (textractData, file) => {
+  console.log('🔧 processTextractResponse called with:', {
+    fileName: file.name,
+    textractDataKeys: Object.keys(textractData),
+    hasStructuredData: !!textractData.structuredData,
+    hasTextractData: !!textractData.textractData,
+    hasRawResponse: !!textractData.rawResponse,
+    hasDebugInfo: !!textractData.debugInfo
+  });
+  
+  console.log('📊 Raw textractData structure:', JSON.stringify(textractData, null, 2));
+  
   const structuredData = textractData.structuredData || {};
   const textractFinancials = textractData.textractData?.financialData || {};
   const intelligence = textractData.intelligence || '';
+  
+  console.log('📋 Extracted components:', {
+    structuredDataKeys: Object.keys(structuredData),
+    textractFinancialsKeys: Object.keys(textractFinancials),
+    intelligenceLength: intelligence.length,
+    hasBusinessInfo: !!structuredData.businessInfo,
+    hasPurchasePrice: !!structuredData.purchasePrice
+  });
   
   // Extract and validate financial data
   const revenue = textractFinancials.revenue || structuredData.financialData?.revenue || {};
   const costOfRevenue = textractFinancials.cogs || textractFinancials.costOfRevenue || structuredData.financialData?.costOfRevenue || {};
   const operatingExpenses = textractFinancials.operatingExpenses || structuredData.financialData?.operatingExpenses || {};
   const netIncome = textractFinancials.netIncome || structuredData.financialData?.netIncome || {};
+  
+  console.log('💰 Financial data extracted:', {
+    revenueKeys: Object.keys(revenue),
+    costOfRevenueKeys: Object.keys(costOfRevenue),
+    operatingExpensesKeys: Object.keys(operatingExpenses),
+    netIncomeKeys: Object.keys(netIncome)
+  });
   
   // Calculate missing financial metrics
   const { grossProfit, ebitda, sde } = calculateFinancialMetrics(revenue, costOfRevenue, operatingExpenses, netIncome);
@@ -1272,7 +1313,13 @@ const processTextractResponse = (textractData, file) => {
   // Get the correct extraction method from metadata
   const extractionMethod = textractData.metadata?.extractionMethod || 'Unknown Analysis';
   
-  return {
+  console.log('📈 Final calculated metrics:', {
+    grossProfitKeys: Object.keys(finalGrossProfit),
+    ebitdaKeys: Object.keys(finalEbitda),
+    sdeKeys: Object.keys(finalSDE)
+  });
+  
+  const result = {
     id: generateId(),
     source: 'pdf',
     periods: structuredData.financialData?.periods || Object.keys(textractFinancials.years || {}) || ['TTM'],
@@ -1305,9 +1352,24 @@ const processTextractResponse = (textractData, file) => {
       // Store the intelligence narrative
       analysisNarrative: intelligence,
       // Store raw Textract data for debugging
-      textractMetadata: textractData.textractData?.documentMetadata
+      textractMetadata: textractData.textractData?.documentMetadata,
+      // Store complete raw response for debugging
+      rawApiResponse: textractData.rawResponse || textractData,
+      debugInfo: textractData.debugInfo || {}
     }
   };
+  
+  console.log('✅ processTextractResponse final result:', {
+    id: result.id,
+    periods: result.periods,
+    hasIncomeStatement: !!result.statements.incomeStatement,
+    metadata: result.metadata,
+    extractionMethod: result.metadata.extractionMethod,
+    purchasePrice: result.metadata.purchasePrice,
+    businessName: result.metadata.businessName
+  });
+  
+  return result;
 };
 
 // Process Ultra-Intelligence API response into our data format
@@ -4927,8 +4989,18 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
                       </div>
                     )}
                     
-                    {/* Raw Data Toggle */}
-                    <div className="border-t border-blue-200 pt-3">
+                    {/* Enhanced Debug Toggle */}
+                    <div className="border-t border-blue-200 pt-3 space-y-2">
+                      <button
+                        onClick={() => {
+                          const debugDiv = document.getElementById('comprehensiveDebugView');
+                          debugDiv.style.display = debugDiv.style.display === 'none' ? 'block' : 'none';
+                        }}
+                        className="text-xs bg-red-100 hover:bg-red-200 px-3 py-1 rounded text-red-700 font-bold mr-2"
+                      >
+                        🐛 COMPREHENSIVE DEBUG VIEW
+                      </button>
+                      
                       <button
                         onClick={() => {
                           const rawDataDiv = document.getElementById('rawDataDisplay');
@@ -4938,6 +5010,122 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
                       >
                         🔍 Toggle Raw Extracted Data
                       </button>
+                      
+                      {/* Comprehensive Debug View */}
+                      <div id="comprehensiveDebugView" style={{display: 'none'}} className="mt-3 p-4 bg-red-50 rounded-lg border-2 border-red-200 text-xs">
+                        <div className="font-bold text-red-800 mb-4 text-center text-sm">
+                          🚨 COMPREHENSIVE EXTRACTION DEBUG ANALYSIS 🚨
+                        </div>
+                        
+                        {/* Summary Statistics */}
+                        <div className="mb-4 p-3 bg-white rounded border">
+                          <div className="font-bold text-gray-800 mb-2">📊 EXTRACTION SUMMARY</div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>✅ Fields Found: {extractedData?.totalDataPoints || 0}</div>
+                            <div>📊 Overall Score: {extractedData?.scores?.overall || 0}%</div>
+                            <div>🏢 Business Score: {extractedData?.scores?.businessInfo || 0}%</div>
+                            <div>💰 Financial Score: {extractedData?.scores?.financialData || 0}%</div>
+                            <div>💵 Valuation Score: {extractedData?.scores?.valuation || 0}%</div>
+                            <div>📅 Period Score: {extractedData?.scores?.periodCoverage || 0}%</div>
+                          </div>
+                        </div>
+                        
+                        {/* Critical Fields Analysis */}
+                        <div className="mb-4 p-3 bg-white rounded border">
+                          <div className="font-bold text-gray-800 mb-2">🎯 CRITICAL FIELDS STATUS</div>
+                          <div className="space-y-1">
+                            <div className={`${extractedData?.detailedBreakdown?.businessInfo?.name ? 'text-green-700' : 'text-red-700'}`}>
+                              {extractedData?.detailedBreakdown?.businessInfo?.name ? '✅' : '❌'} Business Name: {extractedData?.detailedBreakdown?.businessInfo?.name || 'NOT FOUND'}
+                            </div>
+                            <div className={`${extractedData?.detailedBreakdown?.valuation?.purchasePrice ? 'text-green-700' : 'text-red-700'}`}>
+                              {extractedData?.detailedBreakdown?.valuation?.purchasePrice ? '✅' : '❌'} Purchase Price: {
+                                extractedData?.detailedBreakdown?.valuation?.purchasePrice ? 
+                                `$${(extractedData.detailedBreakdown.valuation.purchasePrice / 1000000).toFixed(2)}M` : 
+                                'NOT FOUND'
+                              }
+                            </div>
+                            <div className={`${extractedData?.detailedBreakdown?.valuation?.priceSource !== 'not_found' ? 'text-green-700' : 'text-red-700'}`}>
+                              {extractedData?.detailedBreakdown?.valuation?.priceSource !== 'not_found' ? '✅' : '❌'} Price Source: {extractedData?.detailedBreakdown?.valuation?.priceSource || 'not_found'}
+                            </div>
+                            {/* Revenue Analysis */}
+                            {extractedData?.detailedBreakdown?.financialMetrics?.revenue && (
+                              <div className="mt-2">
+                                <div className="font-semibold text-blue-700">💰 REVENUE BY PERIOD:</div>
+                                {Object.entries(extractedData.detailedBreakdown.financialMetrics.revenue).map(([period, value]) => (
+                                  <div key={period} className={`ml-2 ${value ? 'text-green-700' : 'text-red-700'}`}>
+                                    {value ? '✅' : '❌'} {period}: {value ? `$${(value / 1000000).toFixed(2)}M` : 'NO DATA'}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {/* EBITDA Analysis */}
+                            {extractedData?.detailedBreakdown?.financialMetrics?.ebitda && (
+                              <div className="mt-2">
+                                <div className="font-semibold text-purple-700">📈 EBITDA BY PERIOD:</div>
+                                {Object.entries(extractedData.detailedBreakdown.financialMetrics.ebitda).map(([period, value]) => (
+                                  <div key={period} className={`ml-2 ${value ? 'text-green-700' : 'text-red-700'}`}>
+                                    {value ? '✅' : '❌'} {period}: {value ? `$${(value / 1000000).toFixed(2)}M` : 'NO DATA'}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Raw API Response Analysis */}
+                        {extractedData?.rawApiResponse && (
+                          <div className="mb-4 p-3 bg-white rounded border">
+                            <div className="font-bold text-gray-800 mb-2">🔧 RAW API RESPONSE ANALYSIS</div>
+                            <div className="space-y-1 text-xs">
+                              <div>📊 Response Type: {typeof extractedData.rawApiResponse}</div>
+                              <div>🔑 Top-level Keys: {Object.keys(extractedData.rawApiResponse).join(', ')}</div>
+                              {extractedData.rawApiResponse.financialData && (
+                                <div>💰 Financial Data Keys: {Object.keys(extractedData.rawApiResponse.financialData).join(', ')}</div>
+                              )}
+                              {extractedData.rawApiResponse.structuredData && (
+                                <div>🏗️ Structured Data Keys: {Object.keys(extractedData.rawApiResponse.structuredData).join(', ')}</div>
+                              )}
+                              <div>🎯 Confidence: {extractedData.rawApiResponse.confidence || 'Not provided'}</div>
+                              <div>📝 Has Narrative: {extractedData.rawApiResponse.narrative ? 'Yes' : 'No'}</div>
+                              <div>📋 Tables Found: {extractedData.rawApiResponse.tables?.length || 0}</div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Recommendations */}
+                        {extractedData?.recommendations && extractedData.recommendations.length > 0 && (
+                          <div className="mb-4 p-3 bg-yellow-50 rounded border border-yellow-200">
+                            <div className="font-bold text-yellow-800 mb-2">💡 IMPROVEMENT RECOMMENDATIONS</div>
+                            {extractedData.recommendations.map((rec, index) => (
+                              <div key={index} className="text-yellow-700 mb-1 text-xs">{rec}</div>
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Processing Logs Simulation */}
+                        <div className="mb-4 p-3 bg-gray-100 rounded border">
+                          <div className="font-bold text-gray-800 mb-2">📝 PROCESSING LOGS</div>
+                          <div className="font-mono text-xs space-y-1 text-gray-600">
+                            <div>✅ PDF converted to {extractedData?.summary?.pagesProcessed || 'unknown'} images</div>
+                            <div>✅ Images sent to {extractedData?.summary?.extractionMethod || 'Unknown'}</div>
+                            <div>✅ Analysis completed with {extractedData?.scores?.overall || 0}% confidence</div>
+                            <div>✅ Data processed through validation pipeline</div>
+                            <div>✅ Financial calculations applied</div>
+                            {extractedData?.detailedBreakdown?.valuation?.purchasePrice ? 
+                              <div>✅ Purchase price extracted successfully</div> : 
+                              <div>❌ Purchase price extraction failed</div>
+                            }
+                          </div>
+                        </div>
+                        
+                        {/* Complete Raw JSON */}
+                        <div className="p-3 bg-black rounded">
+                          <div className="font-bold text-green-400 mb-2">💻 COMPLETE RAW JSON RESPONSE</div>
+                          <pre className="text-green-300 text-xs overflow-auto max-h-96 font-mono whitespace-pre-wrap">
+                            {JSON.stringify(extractedData?.rawApiResponse || extractedData, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
                       
                       <div id="rawDataDisplay" style={{display: 'none'}} className="mt-3 p-3 bg-gray-50 rounded border text-xs">
                         <div className="font-semibold text-gray-800 mb-2">📋 Complete Raw Extraction Data:</div>
