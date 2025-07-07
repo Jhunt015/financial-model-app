@@ -673,7 +673,7 @@ const extractFinancialData = (jsonData, fileName) => {
 };
 
 // PDF Processing Function - convert to images first
-const processPDFFile = async (file, setProgress) => {
+const processPDFFile = async (file, setProgress, service = 'openai') => {
   console.log('Processing PDF file:', file.name);
   
   try {
@@ -746,7 +746,7 @@ const processPDFFile = async (file, setProgress) => {
       setProgress(75); // Progress for API call
     }
     
-    const response = await analyzePDFWithImages(file, images);
+    const response = await analyzePDFWithImages(file, images, service);
     
     return response;
     
@@ -812,10 +812,16 @@ const analyzeDocumentWithTextExtraction = async (file) => {
   }
 };
 
-// Enhanced API analysis function with AWS Textract support
-const analyzePDFWithImages = async (file, images) => {
-  // Try AWS Textract first for better extraction (using working endpoint)
-  const textractUrl = '/api/analyze-textract-simple';
+// Enhanced API analysis function with service selection
+const analyzePDFWithImages = async (file, images, service = 'openai') => {
+  // Service URLs mapping
+  const serviceUrls = {
+    openai: '/api/analyze-openai',
+    claude: '/api/analyze-claude', 
+    textract: '/api/analyze-textract-simple'
+  };
+  
+  const primaryUrl = serviceUrls[service];
   const fallbackUrl = '/api/analyze-intelligence';
   
   // Get base64 file data for processing
@@ -830,8 +836,8 @@ const analyzePDFWithImages = async (file, images) => {
   }));
   
   try {
-    console.log('🚀 Attempting AWS Textract analysis...');
-    const response = await fetch(textractUrl, {
+    console.log(`🚀 Attempting ${service.toUpperCase()} analysis...`);
+    const response = await fetch(primaryUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -865,7 +871,7 @@ const analyzePDFWithImages = async (file, images) => {
       throw new Error(result.error || 'Failed to analyze document');
     }
   } catch (error) {
-    console.error('Textract API error, falling back:', error);
+    console.error(`${service.toUpperCase()} API error, falling back:`, error);
     // Fall back to intelligence API
     return await analyzePDFWithIntelligenceAPI(file, images, fileData);
   }
@@ -4352,7 +4358,7 @@ function LandingPage({ onGetStarted, onMyModels, onLogin, user }) {
 }
 
 // File Upload Component
-function FileUpload({ onFileProcessed, onError, onViewModels, user }) {
+function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisService = 'openai', setAnalysisService }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [processingStep, setProcessingStep] = useState('');
@@ -4377,8 +4383,8 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user }) {
       let result;
       
       if (fileExtension === 'pdf') {
-        setProcessingStep('Analyzing PDF with AI + AWS Textract...');
-        result = await processPDFFile(file, setProgress);
+        setProcessingStep(`Analyzing PDF with ${analysisService.toUpperCase()}...`);
+        result = await processPDFFile(file, setProgress, analysisService);
       } else {
         setProcessingStep('Analyzing Excel spreadsheet...');
         result = await processExcelFile(file);
@@ -4431,6 +4437,50 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user }) {
           </div>
           <h1 className="text-4xl md:text-5xl font-bold text-black mb-4">Upload CIM or Financials</h1>
           <p className="text-xl text-gray-700">Upload your Confidential Information Memorandum or financial statements to begin analysis</p>
+          
+          {/* Analysis Service Selector */}
+          <div className="mt-8 mb-8">
+            <div className="flex items-center justify-center space-x-4 mb-4">
+              <Settings className="h-6 w-6 text-gray-600" />
+              <h3 className="text-lg font-semibold text-gray-700">Choose Analysis Service</h3>
+            </div>
+            <div className="flex justify-center space-x-4">
+              <button
+                onClick={() => setAnalysisService('openai')}
+                className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                  analysisService === 'openai'
+                    ? 'bg-green-600 text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                OpenAI 4o
+              </button>
+              <button
+                onClick={() => setAnalysisService('claude')}
+                className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                  analysisService === 'claude'
+                    ? 'bg-green-600 text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Claude Opus 4
+              </button>
+              <button
+                onClick={() => setAnalysisService('textract')}
+                className={`px-6 py-3 rounded-lg font-medium transition-all ${
+                  analysisService === 'textract'
+                    ? 'bg-green-600 text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                AWS Textract
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mt-2">
+              Selected: {analysisService === 'openai' ? 'OpenAI GPT-4o Vision' : 
+                        analysisService === 'claude' ? 'Claude Opus 4 Vision' : 'AWS Textract + AI'}
+            </p>
+          </div>
         </div>
 
         <CustomDropzone onFileSelect={processFile} isProcessing={isProcessing}>
@@ -4574,6 +4624,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState('landing');
   const [financialData, setFinancialData] = useState(null);
   const [debtServiceModel, setDebtServiceModel] = useState(null);
+  const [analysisService, setAnalysisService] = useState('openai'); // 'openai', 'claude', 'textract'
 
   // Check if we're on the auth callback route or model route
   useEffect(() => {
@@ -4743,6 +4794,8 @@ export default function App() {
           onError={(error) => alert(error)}
           onViewModels={handleMyModels}
           user={user}
+          analysisService={analysisService}
+          setAnalysisService={setAnalysisService}
         />
       )}
       
