@@ -821,6 +821,14 @@ const analyzePDFWithImages = async (file, images) => {
   // Get base64 file data for processing
   const fileData = await fileToBase64(file);
   
+  // Store for debugging
+  localStorage.setItem('lastUploadedFile', JSON.stringify({
+    fileName: file.name,
+    images: images,
+    fileData: fileData,
+    timestamp: new Date().toISOString()
+  }));
+  
   try {
     console.log('🚀 Attempting AWS Textract analysis...');
     const response = await fetch(textractUrl, {
@@ -895,6 +903,36 @@ const analyzePDFWithIntelligenceAPI = async (file, images, fileData) => {
     }
   } catch (error) {
     console.error('Intelligence API error:', error);
+    throw error;
+  }
+};
+
+// Run extraction debug analysis
+const runExtractionDebug = async (fileName) => {
+  // Get the file from recent uploads or use sample data
+  const lastUploadedFile = JSON.parse(localStorage.getItem('lastUploadedFile') || '{}');
+  
+  try {
+    const response = await fetch('/api/analyze-debug', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fileName: fileName,
+        images: lastUploadedFile.images || null,
+        fileData: lastUploadedFile.fileData || null
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Debug API failed: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    return result.debugReport;
+  } catch (error) {
+    console.error('Debug analysis failed:', error);
     throw error;
   }
 };
@@ -3185,6 +3223,26 @@ function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
           >
             <Calculator className="h-5 w-5" />
             <span>Build 5-Year Financial Model</span>
+          </button>
+          <button
+            onClick={async () => {
+              setIsLoading(true);
+              try {
+                const debugResult = await runExtractionDebug(model.historicalData.metadata.fileName);
+                console.log('🔍 EXTRACTION DEBUG RESULT:', debugResult);
+                alert('Debug analysis complete! Check console for detailed results.');
+              } catch (error) {
+                console.error('Debug failed:', error);
+                alert('Debug analysis failed. Check console for details.');
+              } finally {
+                setIsLoading(false);
+              }
+            }}
+            className="px-8 py-4 bg-yellow-400 text-black font-bold text-lg rounded-lg hover:bg-yellow-500 transition-all flex items-center justify-center space-x-2"
+            disabled={isLoading}
+          >
+            <AlertCircle className="h-5 w-5" />
+            <span>Debug Extraction Issues</span>
           </button>
           <button
             onClick={onBack}

@@ -27,6 +27,9 @@
     "api/analyze-textract.js": {
       "maxDuration": 300
     },
+    "api/analyze-debug.js": {
+      "maxDuration": 300
+    },
     "api/test.js": {
       "maxDuration": 60
     }

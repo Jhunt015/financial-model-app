@@ -260,11 +260,21 @@ ${documentAnalysis}
 INVESTMENT INTELLIGENCE:
 ${investmentIntelligence}
 
+CRITICAL EXTRACTION REQUIREMENTS:
+1. EXTRACT ACTUAL NUMBERS: Look for specific financial figures, not just percentages or qualitative descriptions
+2. IDENTIFY TABLES: Financial data is often in table format with years as columns
+3. PARSE CAREFULLY: Look for patterns like "$5.2M" or "$5,200,000" or "5.2 million"
+4. HANDLE PERIODS: TTM, LTM, 2021, 2022, 2023, 2024E, etc.
+5. REVENUE SYNONYMS: Sales, Income, Revenue, Commission Income, Gross Revenue
+6. EBITDA SYNONYMS: EBITDA, Adjusted EBITDA, Normalized EBITDA, Operating Income + D&A
+
 INTELLIGENT MAPPING INSTRUCTIONS:
 - Map similar concepts intelligently (e.g., "Commission Income" → revenue for insurance agencies)
 - Use business context to make appropriate inferences
 - Preserve important nuances and variations in terminology
 - Calculate derived metrics where possible
+- Convert ALL dollar amounts to actual numbers (e.g., "$5.2 million" = 5200000)
+- Extract SPECIFIC NUMERICAL VALUES for each year
 - Assign confidence levels to each data point
 - Flag any significant assumptions or extrapolations
 
