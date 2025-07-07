@@ -61,7 +61,7 @@ export default async function handler(req, res) {
         processingTime: Date.now(),
         tablesFound: analysis.tables?.length || 0,
         confidence: result.confidence,
-        model: 'claude-3-opus-20240229'
+        model: 'claude-3-5-sonnet-20241022'
       }
     });
 
@@ -193,7 +193,7 @@ CONVERSION RULES:
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-3-opus-20240229',
+        model: 'claude-3-5-sonnet-20241022',
         max_tokens: 4096,
         temperature: 0.1,
         messages: [{
