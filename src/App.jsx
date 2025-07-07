@@ -675,15 +675,37 @@ const extractFinancialData = (jsonData, fileName) => {
 // PDF Processing Function - convert to images first
 const processPDFFile = async (file, setProgress, service = 'openai', setExtractedData) => {
   console.log('Processing PDF file:', file.name);
+  console.log('Using service:', service);
   
   try {
+    // Check if we need to convert to images (only for vision services)
+    const needsImageConversion = service.includes('vision');
+    
+    if (!needsImageConversion) {
+      // For PDF text services, skip image conversion
+      console.log('📄 Using direct PDF processing (no image conversion needed)');
+      
+      if (setProgress) {
+        setProgress(50);
+      }
+      
+      const response = await analyzePDFWithImages(file, null, service, setExtractedData);
+      
+      if (setProgress) {
+        setProgress(100);
+      }
+      
+      return response;
+    }
+    
+    // Only convert to images for vision services
+    console.log('👁️ Converting PDF to images for vision analysis...');
+    
     // Import PDF.js dynamically
     const pdfjsLib = await import('pdfjs-dist/webpack');
     
     // Set worker
     pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-    
-    console.log('Converting PDF to images for better extraction...');
     
     // Convert file to array buffer
     const arrayBuffer = await file.arrayBuffer();
@@ -4373,7 +4395,7 @@ function LandingPage({ onGetStarted, onMyModels, onLogin, user }) {
 }
 
 // File Upload Component
-function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisService = 'openai', setAnalysisService }) {
+function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisService = 'openai-vision', setAnalysisService }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [processingStep, setProcessingStep] = useState('');
@@ -4694,7 +4716,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState('landing');
   const [financialData, setFinancialData] = useState(null);
   const [debtServiceModel, setDebtServiceModel] = useState(null);
-  const [analysisService, setAnalysisService] = useState('pdf-text-openai'); // 'pdf-text-openai', 'pdf-text-claude', 'textract', 'openai-vision', 'claude-vision'
+  const [analysisService, setAnalysisService] = useState('openai-vision'); // 'pdf-text-openai', 'pdf-text-claude', 'textract', 'openai-vision', 'claude-vision'
 
   // Check if we're on the auth callback route or model route
   useEffect(() => {
