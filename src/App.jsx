@@ -2764,6 +2764,7 @@ const identifyBusinessType = (fileName, incomeStatement, documentText = '') => {
 
 // Analysis Summary Component
 function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
+  const [isLoading, setIsLoading] = useState(false);
   const financialData = model.historicalData;
   const ttmRevenue = financialData.statements.incomeStatement?.revenue['TTM'] || 
                      Math.max(...Object.values(financialData.statements.incomeStatement.revenue));
