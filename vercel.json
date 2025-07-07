@@ -3,7 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/analyze-textract-v3.js": {
+    "api/analyze-textract.js": {
       "maxDuration": 300
     },
     "api/analyze-intelligence.js": {
@@ -17,6 +17,9 @@
     },
     "api/analyze-debug.js": {
       "maxDuration": 300
+    },
+    "api/aws-test.js": {
+      "maxDuration": 60
     },
     "api/test.js": {
       "maxDuration": 60
