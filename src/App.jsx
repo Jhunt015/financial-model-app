@@ -812,16 +812,63 @@ const analyzeDocumentWithTextExtraction = async (file) => {
   }
 };
 
-// Enhanced API analysis function with hybrid support
+// Enhanced API analysis function with AWS Textract support
 const analyzePDFWithImages = async (file, images) => {
-  // Use ultra-intelligence API for comprehensive analysis
-  const apiUrl = import.meta.env.VITE_API_URL || '/api/analyze-intelligence';
+  // Try AWS Textract first for better extraction
+  const textractUrl = '/api/analyze-textract';
+  const fallbackUrl = '/api/analyze-intelligence';
   
-  // Get base64 file data for text extraction fallback
+  // Get base64 file data for processing
   const fileData = await fileToBase64(file);
   
   try {
-    console.log('🚀 Calling hybrid analysis API...');
+    console.log('🚀 Attempting AWS Textract analysis...');
+    const response = await fetch(textractUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fileName: file.name,
+        images: images,
+        fileData: fileData
+      })
+    });
+    
+    if (!response.ok) {
+      // Check if it's AWS credentials issue
+      const errorText = await response.text();
+      if (errorText.includes('AWS credentials')) {
+        console.log('⚠️ AWS Textract not configured, falling back to AI-only analysis...');
+        // Fall back to intelligence API
+        return await analyzePDFWithIntelligenceAPI(file, images, fileData);
+      }
+      throw new Error(`API request failed: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    console.log('🎉 Textract analysis complete:', result);
+    
+    if (result.success && result.data) {
+      console.log('✅ Tables extracted:', result.metadata?.tablesFound || 0);
+      console.log('📊 Confidence score:', result.metadata?.confidence || 'unknown');
+      return processTextractResponse(result.data, file);
+    } else {
+      throw new Error(result.error || 'Failed to analyze document');
+    }
+  } catch (error) {
+    console.error('Textract API error, falling back:', error);
+    // Fall back to intelligence API
+    return await analyzePDFWithIntelligenceAPI(file, images, fileData);
+  }
+};
+
+// Fallback to intelligence API
+const analyzePDFWithIntelligenceAPI = async (file, images, fileData) => {
+  const apiUrl = '/api/analyze-intelligence';
+  
+  try {
+    console.log('🧠 Using AI intelligence analysis...');
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -839,19 +886,62 @@ const analyzePDFWithImages = async (file, images) => {
     }
     
     const result = await response.json();
-    console.log('🎉 Hybrid API response:', result);
+    console.log('✅ Intelligence analysis complete:', result);
     
     if (result.success && result.data) {
-      console.log('✅ Analysis method used:', result.metadata?.selectedMethod || 'hybrid');
-      console.log('📊 Confidence score:', result.metadata?.confidence || 'unknown');
       return processAPIResponse(result.data, file);
     } else {
       throw new Error(result.error || 'Failed to analyze document');
     }
   } catch (error) {
-    console.error('API analysis error:', error);
+    console.error('Intelligence API error:', error);
     throw error;
   }
+};
+
+// Process Textract API response into our data format
+const processTextractResponse = (textractData, file) => {
+  const structuredData = textractData.structuredData || {};
+  const textractFinancials = textractData.textractData?.financialData || {};
+  const intelligence = textractData.intelligence || '';
+  
+  // Combine Textract extracted data with AI intelligence
+  return {
+    id: generateId(),
+    source: 'pdf',
+    periods: structuredData.financialData?.periods || Object.keys(textractFinancials.years || {}) || ['TTM'],
+    statements: { 
+      incomeStatement: {
+        revenue: textractFinancials.revenue || structuredData.financialData?.revenue || {},
+        commissionIncome: structuredData.financialData?.commissionIncome || {},
+        costOfRevenue: textractFinancials.cogs || structuredData.financialData?.costOfRevenue || {},
+        grossProfit: textractFinancials.grossProfit || structuredData.financialData?.grossProfit || {},
+        operatingExpenses: textractFinancials.operatingExpenses || structuredData.financialData?.operatingExpenses || {},
+        ebitda: textractFinancials.ebitda || structuredData.financialData?.ebitda || {},
+        adjustedEbitda: structuredData.financialData?.adjustedEbitda || {},
+        recastEbitda: structuredData.financialData?.recastEbitda || {},
+        sde: structuredData.financialData?.sde || {},
+        netIncome: textractFinancials.netIncome || structuredData.financialData?.netIncome || {},
+        cashFlow: structuredData.financialData?.cashFlow || {},
+        adjustments: textractFinancials.adjustments || []
+      }
+    },
+    metadata: {
+      fileName: file.name,
+      uploadDate: new Date(),
+      confidence: textractData.confidence || 0.85,
+      businessType: structuredData.businessInfo?.type || 'General Business',
+      businessName: structuredData.businessInfo?.name,
+      extractionMethod: 'AWS Textract + AI Analysis',
+      purchasePrice: structuredData.purchasePrice,
+      priceSource: structuredData.priceSource,
+      tablesExtracted: textractData.textractData?.allTables?.length || 0,
+      // Store the intelligence narrative
+      analysisNarrative: intelligence,
+      // Store raw Textract data for debugging
+      textractMetadata: textractData.textractData?.documentMetadata
+    }
+  };
 };
 
 // Process Ultra-Intelligence API response into our data format
@@ -2724,12 +2814,26 @@ function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
           </div>
           <h1 className="text-5xl md:text-6xl font-bold text-black mb-4">Acquisition Analysis</h1>
           <p className="text-xl text-gray-700">Based on {model.historicalData.metadata.fileName}</p>
-          {model.historicalData.modelInfo && (
-            <div className="mt-4 inline-flex items-center px-4 py-2 bg-blue-100 rounded-lg text-sm">
-              <span className="text-blue-800 font-semibold">🤖 Analyzed by {model.historicalData.modelInfo.provider} {model.historicalData.modelInfo.model}</span>
-              <span className="ml-2 text-blue-600">• {new Date(model.historicalData.modelInfo.analysisTimestamp).toLocaleString()}</span>
-            </div>
-          )}
+          <div className="mt-4 flex flex-wrap gap-2">
+            {model.historicalData.metadata.extractionMethod && (
+              <div className="inline-flex items-center px-4 py-2 bg-blue-100 rounded-lg text-sm">
+                <span className="text-blue-800 font-semibold">
+                  {model.historicalData.metadata.extractionMethod.includes('Textract') ? '📊' : '🤖'} {model.historicalData.metadata.extractionMethod}
+                </span>
+                {model.historicalData.metadata.tablesExtracted > 0 && (
+                  <span className="ml-2 text-blue-600">• {model.historicalData.metadata.tablesExtracted} tables found</span>
+                )}
+                {model.historicalData.metadata.confidence && (
+                  <span className="ml-2 text-blue-600">• {Math.round(model.historicalData.metadata.confidence)}% confidence</span>
+                )}
+              </div>
+            )}
+            {model.historicalData.modelInfo && (
+              <div className="inline-flex items-center px-4 py-2 bg-green-100 rounded-lg text-sm">
+                <span className="text-green-800 font-semibold">✨ Enhanced by {model.historicalData.modelInfo.provider} {model.historicalData.modelInfo.model}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Key Metrics */}
@@ -2847,6 +2951,33 @@ function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
             </div>
           </div>
         </div>
+
+        {/* AI Analysis Narrative - Show if Textract was used */}
+        {model.historicalData.metadata.analysisNarrative && (
+          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-3xl p-8 shadow-lg border border-indigo-200 mb-12">
+            <div className="flex items-center mb-6">
+              <div className="p-3 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl mr-4">
+                <Zap className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-black">AI Investment Analysis</h2>
+                <p className="text-gray-600">Comprehensive M&A insights from document analysis</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <div className="prose prose-sm max-w-none text-gray-700">
+                <div className="whitespace-pre-line">
+                  {model.historicalData.metadata.analysisNarrative.substring(0, 2000)}
+                  {model.historicalData.metadata.analysisNarrative.length > 2000 && (
+                    <span className="text-blue-600 cursor-pointer hover:underline" onClick={() => {
+                      alert(model.historicalData.metadata.analysisNarrative);
+                    }}> ...read more</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Business Analysis */}
         <div className="bg-white rounded-3xl p-8 shadow-lg border border-gray-200 mb-12">
