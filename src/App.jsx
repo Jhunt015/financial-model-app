@@ -812,12 +812,16 @@ const analyzeDocumentWithTextExtraction = async (file) => {
   }
 };
 
-// API analysis function with image support
+// Enhanced API analysis function with hybrid support
 const analyzePDFWithImages = async (file, images) => {
-  // Use bulletproof vision API
-  const apiUrl = import.meta.env.VITE_API_URL || '/api/analyze-vision';
+  // Use ultra-intelligence API for comprehensive analysis
+  const apiUrl = import.meta.env.VITE_API_URL || '/api/analyze-intelligence';
+  
+  // Get base64 file data for text extraction fallback
+  const fileData = await fileToBase64(file);
   
   try {
+    console.log('🚀 Calling hybrid analysis API...');
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -825,7 +829,8 @@ const analyzePDFWithImages = async (file, images) => {
       },
       body: JSON.stringify({
         fileName: file.name,
-        images: images
+        images: images,
+        fileData: fileData
       })
     });
     
@@ -834,9 +839,11 @@ const analyzePDFWithImages = async (file, images) => {
     }
     
     const result = await response.json();
-    console.log('API response:', result);
+    console.log('🎉 Hybrid API response:', result);
     
     if (result.success && result.data) {
+      console.log('✅ Analysis method used:', result.metadata?.selectedMethod || 'hybrid');
+      console.log('📊 Confidence score:', result.metadata?.confidence || 'unknown');
       return processAPIResponse(result.data, file);
     } else {
       throw new Error(result.error || 'Failed to analyze document');
@@ -847,37 +854,54 @@ const analyzePDFWithImages = async (file, images) => {
   }
 };
 
-// Process API response into our data format
+// Process Ultra-Intelligence API response into our data format
 const processAPIResponse = (analysisData, file) => {
+  // Handle new ultra-intelligence format
+  const structuredData = analysisData.structuredData || analysisData;
+  
   return {
     id: generateId(),
     source: 'pdf',
-    periods: analysisData.financialData?.periods || ['TTM'],
+    periods: structuredData.financialData?.periods || ['TTM'],
     statements: { 
       incomeStatement: {
-        revenue: analysisData.financialData?.revenue || {},
-        costOfRevenue: analysisData.financialData?.costOfRevenue || {},
-        grossProfit: analysisData.financialData?.grossProfit || {},
-        operatingExpenses: analysisData.financialData?.operatingExpenses || {},
-        ebitda: analysisData.financialData?.ebitda || {},
-        adjustedEbitda: analysisData.financialData?.adjustedEbitda || {},
-        recastEbitda: analysisData.financialData?.recastEbitda || {},
-        sde: analysisData.financialData?.sde || {},
-        netIncome: analysisData.financialData?.netIncome || {}
+        revenue: structuredData.financialData?.revenue || {},
+        commissionIncome: structuredData.financialData?.commissionIncome || {},
+        costOfRevenue: structuredData.financialData?.costOfRevenue || {},
+        grossProfit: structuredData.financialData?.grossProfit || {},
+        operatingExpenses: structuredData.financialData?.operatingExpenses || {},
+        ebitda: structuredData.financialData?.ebitda || {},
+        adjustedEbitda: structuredData.financialData?.adjustedEbitda || {},
+        recastEbitda: structuredData.financialData?.recastEbitda || {},
+        sde: structuredData.financialData?.sde || {},
+        netIncome: structuredData.financialData?.netIncome || {},
+        cashFlow: structuredData.financialData?.cashFlow || {}
       }
     },
     metadata: {
       fileName: file.name,
       uploadDate: new Date(),
-      confidence: analysisData.confidence || 0.85,
-      businessType: analysisData.businessInfo?.type || 'General Business',
-      businessName: analysisData.businessInfo?.name,
-      extractionMethod: 'Image-based OCR Analysis',
-      purchasePrice: analysisData.purchasePrice,
-      priceSource: analysisData.priceSource,
-      quickStats: analysisData.quickStats,
-      businessProfile: analysisData.businessProfile,
-      modelInfo: analysisData.modelInfo
+      confidence: structuredData.confidence || analysisData.metadata?.confidence || 0.85,
+      businessType: structuredData.businessInfo?.type || 'General Business',
+      businessName: structuredData.businessInfo?.name,
+      location: structuredData.businessInfo?.location,
+      employees: structuredData.businessInfo?.employees,
+      yearEstablished: structuredData.businessInfo?.yearEstablished,
+      extractionMethod: 'Ultra-Intelligence Analysis',
+      purchasePrice: structuredData.purchasePrice,
+      priceSource: structuredData.priceSource,
+      priceConfidence: structuredData.priceConfidence,
+      keyMetrics: structuredData.keyMetrics,
+      businessModel: structuredData.businessInfo?.businessModel,
+      competitiveAdvantage: structuredData.businessInfo?.competitiveAdvantage,
+      // Ultra-intelligence specific data
+      documentIntelligence: analysisData.documentIntelligence,
+      investmentIntelligence: analysisData.investmentIntelligence,
+      intelligenceAssessment: structuredData.intelligenceAssessment,
+      valuationIntelligence: structuredData.valuationIntelligence,
+      valueCreationPlan: structuredData.valueCreationPlan,
+      riskAssessment: structuredData.riskAssessment,
+      modelInfo: analysisData.metadata
     }
   };
 };
@@ -1876,8 +1900,11 @@ const buildFiveYearModel = (baseData, debtModel, inputs, customExitValue = null)
   const marketOwnerComp = Math.min(baseRevenue * 0.15, 300000); // Market rate: 15% of revenue, capped at $300k
   const ownerCompAdjustment = currentOwnerComp - marketOwnerComp;
   
-  // Initialize debt balance tracking
+  // Initialize debt balance and working capital tracking
   let currentDebtBalance = initialDebtAmount;
+  
+  // Initialize working capital with base year
+  let previousYearWorkingCapital = baseRevenue * inputs.workingCapitalPercent;
   
   for (let i = 0; i < 5; i++) {
     // Revenue projection
@@ -1917,11 +1944,19 @@ const buildFiveYearModel = (baseData, debtModel, inputs, customExitValue = null)
     const yearNetIncome = yearEBT - yearTax;
     netIncome.push(yearNetIncome);
     
-    // Free cash flow (add back depreciation since it's non-cash)
-    const workingCapitalChange = yearRevenue * inputs.workingCapitalPercent;
+    // Calculate working capital and its incremental change
+    const currentYearWorkingCapital = yearRevenue * inputs.workingCapitalPercent;
+    const workingCapitalChange = currentYearWorkingCapital - previousYearWorkingCapital;
+    
+    // Capital expenditures
     const capex = yearRevenue * capexPercent; // Use industry-specific capex
+    
+    // Free cash flow (using net income approach: add back depreciation, subtract incremental WC and capex)
     const yearFCF = yearNetIncome + depreciation - workingCapitalChange - capex;
     freeCashFlow.push(yearFCF);
+    
+    // Update working capital for next year's calculation
+    previousYearWorkingCapital = currentYearWorkingCapital;
     
     // Debt service
     debtService.push(annualDebtService);
@@ -1930,10 +1965,17 @@ const buildFiveYearModel = (baseData, debtModel, inputs, customExitValue = null)
     const yearCashAfterDebt = yearFCF - annualDebtService;
     cashAfterDebt.push(yearCashAfterDebt);
     
-    // DSCR (consistent calculation using EBITDA-based cash flow)
-    const cashAvailableForDebt = yearEBITDA - capex - workingCapitalChange - yearTax;
+    // DSCR (Cash Flow Available for Debt Service = EBITDA - Interest - Taxes - ΔWC - CapEx)
+    // This should equal FCF + Interest (since FCF is after interest, CFADS is before debt service)
+    const cashAvailableForDebt = yearEBITDA - yearInterestExpense - yearTax - workingCapitalChange - capex;
     const yearDSCR = annualDebtService > 0 ? cashAvailableForDebt / annualDebtService : 0;
     dscr.push(yearDSCR);
+    
+    // Validation: CFADS should equal FCF + Interest (mathematical consistency check)
+    const expectedCFADS = yearFCF + yearInterestExpense;
+    if (Math.abs(cashAvailableForDebt - expectedCFADS) > 1) {
+      console.warn(`Year ${i + 1}: CFADS calculation inconsistency. CFADS: ${cashAvailableForDebt}, Expected: ${expectedCFADS}`);
+    }
   }
   
   // Calculate exit value using custom value or dynamic business type-specific logic
@@ -2857,6 +2899,153 @@ function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
           </div>
         </div>
 
+        {/* Ultra-Intelligence Analysis */}
+        {model.historicalData.metadata?.documentIntelligence && (
+          <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-3xl p-8 shadow-lg border border-purple-200 mb-12">
+            <div className="flex items-center mb-6">
+              <div className="p-3 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl mr-4">
+                <Zap className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-black">Ultra-Intelligence Analysis</h2>
+                <p className="text-gray-600">AI-powered M&A insights from comprehensive document analysis</p>
+              </div>
+            </div>
+
+            {/* Investment Intelligence Summary */}
+            {model.historicalData.metadata.investmentIntelligence && (
+              <div className="bg-white rounded-2xl p-6 mb-6 shadow-sm">
+                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                  <Star className="h-5 w-5 text-yellow-500 mr-2" />
+                  Investment Intelligence
+                </h3>
+                <div className="prose prose-sm max-w-none text-gray-700">
+                  <div className="whitespace-pre-line">
+                    {model.historicalData.metadata.investmentIntelligence.substring(0, 1000)}
+                    {model.historicalData.metadata.investmentIntelligence.length > 1000 && '...'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Intelligence Assessment Scores */}
+            {model.historicalData.metadata.intelligenceAssessment && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                {Object.entries(model.historicalData.metadata.intelligenceAssessment).map(([key, value]) => (
+                  <div key={key} className="bg-white rounded-xl p-4 text-center shadow-sm">
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">
+                      {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                    </h4>
+                    <div className="relative">
+                      <div className="text-2xl font-bold text-gray-900">{value}/10</div>
+                      <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                        <div 
+                          className={`h-2 rounded-full ${
+                            value >= 8 ? 'bg-green-500' : 
+                            value >= 6 ? 'bg-yellow-500' : 
+                            value >= 4 ? 'bg-orange-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${(value / 10) * 100}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Valuation Intelligence */}
+            {model.historicalData.metadata.valuationIntelligence && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div className="bg-white rounded-xl p-6 shadow-sm">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                    <DollarSign className="h-5 w-5 text-green-500 mr-2" />
+                    Valuation Intelligence
+                  </h3>
+                  <div className="space-y-3">
+                    {model.historicalData.metadata.valuationIntelligence.fairValueRange && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Fair Value Range:</span>
+                        <span className="font-semibold">
+                          {formatCurrency(model.historicalData.metadata.valuationIntelligence.fairValueRange[0])} - {formatCurrency(model.historicalData.metadata.valuationIntelligence.fairValueRange[1])}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600">Confidence:</span>
+                      <span className="font-semibold">{model.historicalData.metadata.valuationIntelligence.valuationConfidence}%</span>
+                    </div>
+                    {model.historicalData.metadata.valuationIntelligence.appropriateMultiples && (
+                      <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                        <p className="text-xs text-gray-600 font-medium mb-1">Industry Benchmarks:</p>
+                        <p className="text-sm text-gray-700">{model.historicalData.metadata.valuationIntelligence.appropriateMultiples}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-xl p-6 shadow-sm">
+                  <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                    <Shield className="h-5 w-5 text-red-500 mr-2" />
+                    Risk Assessment
+                  </h3>
+                  {model.historicalData.metadata.riskAssessment && model.historicalData.metadata.riskAssessment.length > 0 ? (
+                    <div className="space-y-3">
+                      {model.historicalData.metadata.riskAssessment.slice(0, 3).map((risk, index) => (
+                        <div key={index} className="border-l-4 border-red-400 pl-3">
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="text-sm font-medium text-gray-900">{risk.risk}</span>
+                            <span className="text-xs text-red-600 font-semibold">
+                              {risk.impact}/10
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-600">{risk.mitigation}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500">No specific risks identified in analysis</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Value Creation Plan */}
+            {model.historicalData.metadata.valueCreationPlan && model.historicalData.metadata.valueCreationPlan.length > 0 && (
+              <div className="bg-white rounded-xl p-6 shadow-sm">
+                <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                  <TrendingUp className="h-5 w-5 text-blue-500 mr-2" />
+                  Value Creation Opportunities
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {model.historicalData.metadata.valueCreationPlan.slice(0, 4).map((opportunity, index) => (
+                    <div key={index} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="text-sm font-semibold text-gray-900">{opportunity.opportunity}</h4>
+                        <div className="flex space-x-1">
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+                            P:{opportunity.priority}/10
+                          </span>
+                          <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">
+                            {opportunity.timeline}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-600 mb-2">{opportunity.impact}</p>
+                      <div className="w-full bg-gray-200 rounded-full h-1">
+                        <div 
+                          className="bg-blue-500 h-1 rounded-full"
+                          style={{ width: `${(opportunity.priority / 10) * 100}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <button
@@ -3086,7 +3275,7 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
       ['Revenue Growth Rate', (inputs.revenueGrowth || 0) * 100 + '%', ''],
       ['EBITDA Margin', (inputs.ebitdaMargin || 0) * 100 + '%', ''],
       ['Capex % of Revenue', (inputs.capexPercent || 0) * 100 + '%', ''],
-      ['Working Capital % of Revenue', (inputs.workingCapitalPercent || 0) * 100 + '%', ''],
+      ['Working Capital % of Revenue', (inputs.workingCapitalPercent || 0) * 100 + '%', 'Applied to revenue changes'],
       ['', '', ''],
       ['Investment Details', '', ''],
       ['Purchase Price', '$' + (model.assumptions.purchasePrice || 0).toLocaleString(), ''],
@@ -3659,9 +3848,9 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
                       </span>
                     </div>
                     <div className="flex justify-between items-center p-2 border-l-4 border-red-300">
-                      <span>Less: Working Capital</span>
+                      <span>Less: ΔWorking Capital</span>
                       <span className="text-red-600">
-                        ({formatCurrency(fiveYearModel.revenue[0] * inputs.workingCapitalPercent)})
+                        ({formatCurrency((fiveYearModel.revenue[0] * inputs.workingCapitalPercent) - (baseData.statements.incomeStatement?.revenue['TTM'] * inputs.workingCapitalPercent))})
                       </span>
                     </div>
                     <div className="flex justify-between items-center p-2 bg-green-50 rounded">
@@ -3793,8 +3982,8 @@ function FinancialModelBuilder({ model, financialData, onSave, onViewModels }) {
                   <h4 className="font-semibold text-blue-900 mb-2">Free Cash Flow</h4>
                   <p className="text-blue-800">
                     Actual cash generated after all expenses, taxes, and investments. 
-                    In this model: EBITDA - Taxes - Working Capital - CapEx = FCF. 
-                    This is what's available to pay debt and distribute to owners.
+                    In this model: Net Income + Depreciation - ΔWorking Capital - CapEx = FCF. 
+                    This represents the incremental cash change from operations and investments.
                   </p>
                 </div>
               </div>
