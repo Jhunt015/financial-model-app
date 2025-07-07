@@ -69,9 +69,18 @@ export default async function handler(req, res) {
     
     // Step 2: Extract financial tables
     console.log('📊 Extracting financial tables...');
-    const extractor = new FinancialTableExtractor();
-    const financialData = extractor.extractPnLFromTextract(textractData.Blocks);
-    const allTables = extractor.extractAllFinancialTables(textractData.Blocks);
+    let financialData = { revenue: {}, ebitda: {}, years: {} };
+    let allTables = [];
+    
+    try {
+      const extractor = new FinancialTableExtractor();
+      financialData = extractor.extractPnLFromTextract(textractData.Blocks);
+      allTables = extractor.extractAllFinancialTables(textractData.Blocks);
+      console.log('✅ Financial extraction complete');
+    } catch (extractorError) {
+      console.error('❌ Financial table extraction failed:', extractorError);
+      // Continue with empty data as fallback
+    }
     
     // Step 3: Extract all text for context
     console.log('📝 Extracting document text...');
@@ -157,7 +166,15 @@ async function analyzeDocumentWithTextract(fileData, images) {
   
   if (fileData) {
     // Convert base64 to buffer
-    const buffer = Buffer.from(fileData.split(',')[1], 'base64');
+    const base64Data = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+    const buffer = Buffer.from(base64Data, 'base64');
+    
+    // Check size limit (10MB for Textract)
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new Error('Document too large for Textract (max 10MB)');
+    }
+    
+    console.log(`📊 Processing PDF: ${buffer.length} bytes`);
     
     params = {
       Document: {
@@ -166,8 +183,15 @@ async function analyzeDocumentWithTextract(fileData, images) {
       FeatureTypes: ['TABLES', 'FORMS']
     };
   } else if (images && images.length > 0) {
-    // Use first image for Textract (or combine if needed)
+    // Use first image for Textract
     const buffer = Buffer.from(images[0], 'base64');
+    
+    // Check size limit
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new Error('Image too large for Textract (max 10MB)');
+    }
+    
+    console.log(`📊 Processing image: ${buffer.length} bytes`);
     
     params = {
       Document: {
@@ -177,10 +201,16 @@ async function analyzeDocumentWithTextract(fileData, images) {
     };
   }
   
-  // Call Textract
-  const response = await textract.analyzeDocument(params).promise();
-  
-  return response;
+  // Call Textract with error handling
+  try {
+    console.log('🔄 Calling AWS Textract...');
+    const response = await textract.analyzeDocument(params).promise();
+    console.log('✅ Textract successful, blocks found:', response.Blocks?.length || 0);
+    return response;
+  } catch (textractError) {
+    console.error('❌ Textract API call failed:', textractError);
+    throw new Error(`AWS Textract failed: ${textractError.message} (${textractError.code})`);
+  }
 }
 
 /**
