@@ -922,14 +922,10 @@ const analyzePDFWithImages = async (file, images, service = 'pdf-text-openai', s
       console.log('✅ Tables extracted:', result.metadata?.tablesFound || 0);
       console.log('📊 Confidence score:', result.metadata?.confidence || 'unknown');
       
-      // Show real-time extracted data
-      if (setExtractedData && result.data.textractData?.financialData) {
-        setExtractedData({
-          revenue: result.data.textractData.financialData.revenue || {},
-          ebitda: result.data.textractData.financialData.ebitda || {},
-          businessInfo: result.data.structuredData?.businessInfo || {},
-          purchasePrice: result.data.structuredData?.purchasePrice || null
-        });
+      // Show comprehensive extracted data with analysis
+      if (setExtractedData && result.data) {
+        const comprehensiveData = analyzeExtractionCompleteness(result.data);
+        setExtractedData(comprehensiveData);
       }
       
       return processTextractResponse(result.data, file);
@@ -1008,6 +1004,188 @@ const runExtractionDebug = async (fileName) => {
     console.error('Debug analysis failed:', error);
     throw error;
   }
+};
+
+// Comprehensive extraction analysis and scoring
+const analyzeExtractionCompleteness = (data) => {
+  const textractData = data.textractData?.financialData || {};
+  const structuredData = data.structuredData || {};
+  const metadata = data.metadata || {};
+  
+  // Define what we expect to find in a comprehensive CIM
+  const expectedFields = {
+    businessInfo: {
+      name: structuredData.businessInfo?.name,
+      type: structuredData.businessInfo?.type,
+      description: structuredData.businessInfo?.description,
+      location: structuredData.businessInfo?.location
+    },
+    financialMetrics: {
+      revenue: textractData.revenue || {},
+      grossProfit: textractData.grossProfit || {},
+      ebitda: textractData.ebitda || {},
+      operatingExpenses: textractData.operatingExpenses || {},
+      netIncome: textractData.netIncome || {},
+      sde: textractData.sde || {}
+    },
+    valuation: {
+      purchasePrice: structuredData.purchasePrice,
+      priceSource: structuredData.priceSource,
+      valuation: structuredData.valuation,
+      multiple: structuredData.multiple
+    },
+    periods: textractData.periods || [],
+    additionalData: {
+      customerData: structuredData.customerData,
+      marketData: structuredData.marketData,
+      growthMetrics: structuredData.growthMetrics,
+      operationalMetrics: structuredData.operationalMetrics
+    }
+  };
+  
+  // Calculate completeness scores
+  const scores = calculateCompletenessScores(expectedFields);
+  
+  // Count total data points extracted
+  const dataPoints = countExtractedDataPoints(expectedFields);
+  
+  // Generate summary
+  const summary = generateExtractionSummary(expectedFields, scores, dataPoints, metadata);
+  
+  return {
+    ...summary,
+    detailedBreakdown: expectedFields,
+    extractionScores: scores,
+    totalDataPoints: dataPoints
+  };
+};
+
+// Calculate completeness scores for different categories
+const calculateCompletenessScores = (data) => {
+  const scores = {};
+  
+  // Business Info Score (0-100)
+  const businessFields = data.businessInfo;
+  const businessScore = Object.values(businessFields).filter(v => v && v !== '').length / Object.keys(businessFields).length * 100;
+  scores.businessInfo = Math.round(businessScore);
+  
+  // Financial Data Score (0-100)
+  const financialMetrics = data.financialMetrics;
+  let financialDataPoints = 0;
+  let totalFinancialPossible = 0;
+  
+  Object.entries(financialMetrics).forEach(([metric, periods]) => {
+    if (typeof periods === 'object' && periods !== null) {
+      const validPeriods = Object.values(periods).filter(v => v !== null && v !== undefined && !isNaN(v));
+      financialDataPoints += validPeriods.length;
+      totalFinancialPossible += Math.max(3, Object.keys(periods).length); // Expect at least 3 years
+    }
+  });
+  
+  const financialScore = totalFinancialPossible > 0 ? (financialDataPoints / totalFinancialPossible) * 100 : 0;
+  scores.financialData = Math.round(financialScore);
+  
+  // Valuation Score (0-100)
+  const valuationFields = data.valuation;
+  const valuationScore = Object.values(valuationFields).filter(v => v !== null && v !== undefined).length / Object.keys(valuationFields).length * 100;
+  scores.valuation = Math.round(valuationScore);
+  
+  // Period Coverage Score (0-100)
+  const periodsCount = data.periods.length;
+  const periodScore = Math.min(periodsCount / 4 * 100, 100); // Expect 4+ periods
+  scores.periodCoverage = Math.round(periodScore);
+  
+  // Overall Score (weighted average)
+  const overallScore = (
+    scores.businessInfo * 0.2 +
+    scores.financialData * 0.5 +
+    scores.valuation * 0.2 +
+    scores.periodCoverage * 0.1
+  );
+  scores.overall = Math.round(overallScore);
+  
+  return scores;
+};
+
+// Count total extracted data points
+const countExtractedDataPoints = (data) => {
+  let count = 0;
+  
+  // Count business info fields
+  count += Object.values(data.businessInfo).filter(v => v && v !== '').length;
+  
+  // Count financial data points
+  Object.values(data.financialMetrics).forEach(periods => {
+    if (typeof periods === 'object' && periods !== null) {
+      count += Object.values(periods).filter(v => v !== null && v !== undefined && !isNaN(v)).length;
+    }
+  });
+  
+  // Count valuation fields
+  count += Object.values(data.valuation).filter(v => v !== null && v !== undefined).length;
+  
+  // Count periods
+  count += data.periods.length;
+  
+  return count;
+};
+
+// Generate human-readable summary
+const generateExtractionSummary = (data, scores, dataPoints, metadata) => {
+  const periods = data.periods.length > 0 ? data.periods.join(', ') : 'None detected';
+  const businessName = data.businessInfo.name || 'Not detected';
+  const purchasePrice = data.valuation.purchasePrice ? 
+    `$${(data.valuation.purchasePrice / 1000000).toFixed(1)}M` : 'Not found';
+  
+  // Count financial metrics with data
+  const financialMetricsWithData = Object.entries(data.financialMetrics)
+    .filter(([_, periods]) => periods && Object.keys(periods).length > 0)
+    .map(([metric, _]) => metric);
+  
+  return {
+    summary: {
+      businessName,
+      purchasePrice,
+      periods,
+      financialMetricsFound: financialMetricsWithData,
+      totalDataPoints: dataPoints,
+      extractionMethod: metadata.extractionMethod || 'Unknown',
+      pagesProcessed: metadata.pageCount || 'Unknown'
+    },
+    scores,
+    recommendations: generateRecommendations(scores, data)
+  };
+};
+
+// Generate improvement recommendations
+const generateRecommendations = (scores, data) => {
+  const recommendations = [];
+  
+  if (scores.businessInfo < 70) {
+    recommendations.push("📋 Business info incomplete - check if company name, type, and description are clearly stated");
+  }
+  
+  if (scores.financialData < 50) {
+    recommendations.push("💰 Financial data extraction low - verify P&L statements and financial tables are clearly formatted");
+  }
+  
+  if (scores.valuation < 30) {
+    recommendations.push("💵 Purchase price not found - look for 'Asking Price', 'Sale Price', or valuation multiples");
+  }
+  
+  if (scores.periodCoverage < 60) {
+    recommendations.push("📅 Limited historical periods - ensure multiple years of data are included");
+  }
+  
+  if (scores.overall > 80) {
+    recommendations.push("✨ Excellent extraction! Most key data points captured successfully");
+  } else if (scores.overall > 60) {
+    recommendations.push("👍 Good extraction with room for improvement in specific areas");
+  } else {
+    recommendations.push("⚠️ Low extraction rate - document may need better formatting or different analysis service");
+  }
+  
+  return recommendations;
 };
 
 // Calculate financial metrics from raw data
@@ -4741,28 +4919,59 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
                   )}
                 </div>
                 
-                {/* Real-time extraction data display */}
+                {/* Comprehensive extraction analysis display */}
                 {extractedData && (
-                  <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <h4 className="text-sm font-semibold text-blue-800 mb-2">🔍 Data Being Extracted:</h4>
-                    <div className="text-xs text-blue-700 space-y-1">
-                      {extractedData.revenue && Object.keys(extractedData.revenue).length > 0 && (
-                        <div>📈 Revenue: {Object.entries(extractedData.revenue).map(([year, value]) => 
-                          value ? `${year}: $${(value/1000000).toFixed(1)}M` : null
-                        ).filter(Boolean).join(', ')}</div>
-                      )}
-                      {extractedData.ebitda && Object.keys(extractedData.ebitda).length > 0 && (
-                        <div>💰 EBITDA: {Object.entries(extractedData.ebitda).map(([year, value]) => 
-                          value ? `${year}: $${(value/1000000).toFixed(1)}M` : null
-                        ).filter(Boolean).join(', ')}</div>
-                      )}
-                      {extractedData.businessInfo && extractedData.businessInfo.name && (
-                        <div>🏢 Company: {extractedData.businessInfo.name}</div>
-                      )}
-                      {extractedData.purchasePrice && (
-                        <div>💵 Purchase Price: ${(extractedData.purchasePrice/1000000).toFixed(1)}M</div>
-                      )}
+                  <div className="mt-6 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-semibold text-blue-800">🔍 Extraction Analysis</h4>
+                      <div className="text-lg font-bold text-blue-900">
+                        {extractedData.scores?.overall || 0}% Complete
+                      </div>
                     </div>
+                    
+                    {/* Score breakdown */}
+                    {extractedData.scores && (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                        <div className="text-center p-2 bg-white rounded">
+                          <div className="text-xs text-gray-600">Business Info</div>
+                          <div className="font-semibold text-blue-600">{extractedData.scores.businessInfo}%</div>
+                        </div>
+                        <div className="text-center p-2 bg-white rounded">
+                          <div className="text-xs text-gray-600">Financial Data</div>
+                          <div className="font-semibold text-green-600">{extractedData.scores.financialData}%</div>
+                        </div>
+                        <div className="text-center p-2 bg-white rounded">
+                          <div className="text-xs text-gray-600">Valuation</div>
+                          <div className="font-semibold text-purple-600">{extractedData.scores.valuation}%</div>
+                        </div>
+                        <div className="text-center p-2 bg-white rounded">
+                          <div className="text-xs text-gray-600">Period Coverage</div>
+                          <div className="font-semibold text-orange-600">{extractedData.scores.periodCoverage}%</div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Key findings */}
+                    {extractedData.summary && (
+                      <div className="text-xs text-blue-700 space-y-1 mb-3">
+                        <div>🏢 <strong>Company:</strong> {extractedData.summary.businessName}</div>
+                        <div>💵 <strong>Price:</strong> {extractedData.summary.purchasePrice}</div>
+                        <div>📅 <strong>Periods:</strong> {extractedData.summary.periods}</div>
+                        <div>📊 <strong>Metrics Found:</strong> {extractedData.summary.financialMetricsFound?.join(', ') || 'None'}</div>
+                        <div>📈 <strong>Data Points:</strong> {extractedData.totalDataPoints}</div>
+                        <div>🔧 <strong>Method:</strong> {extractedData.summary.extractionMethod}</div>
+                      </div>
+                    )}
+                    
+                    {/* Recommendations */}
+                    {extractedData.recommendations && extractedData.recommendations.length > 0 && (
+                      <div className="text-xs">
+                        <div className="font-semibold text-blue-800 mb-1">💡 Recommendations:</div>
+                        {extractedData.recommendations.map((rec, index) => (
+                          <div key={index} className="text-blue-600 mb-1">{rec}</div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
