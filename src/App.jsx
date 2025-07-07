@@ -976,35 +976,7 @@ const analyzePDFWithIntelligenceAPI = async (file, images, fileData, service = '
   }
 };
 
-// Run extraction debug analysis
-const runExtractionDebug = async (fileName) => {
-  // Get the file from recent uploads or use sample data
-  const lastUploadedFile = JSON.parse(localStorage.getItem('lastUploadedFile') || '{}');
-  
-  try {
-    const response = await fetch('/api/analyze-debug', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        fileName: fileName,
-        images: lastUploadedFile.images || null,
-        fileData: lastUploadedFile.fileData || null
-      })
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Debug API failed: ${response.status}`);
-    }
-    
-    const result = await response.json();
-    return result.debugReport;
-  } catch (error) {
-    console.error('Debug analysis failed:', error);
-    throw error;
-  }
-};
+// Note: Old debug function removed - using new comprehensive debugging system during extraction
 
 // Comprehensive extraction analysis and scoring
 const analyzeExtractionCompleteness = (data) => {
@@ -3581,26 +3553,7 @@ function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
             <Calculator className="h-5 w-5" />
             <span>Build 5-Year Financial Model</span>
           </button>
-          <button
-            onClick={async () => {
-              setIsLoading(true);
-              try {
-                const debugResult = await runExtractionDebug(model.historicalData.metadata.fileName);
-                console.log('🔍 EXTRACTION DEBUG RESULT:', debugResult);
-                alert('Debug analysis complete! Check console for detailed results.');
-              } catch (error) {
-                console.error('Debug failed:', error);
-                alert('Debug analysis failed. Check console for details.');
-              } finally {
-                setIsLoading(false);
-              }
-            }}
-            className="px-8 py-4 bg-yellow-400 text-black font-bold text-lg rounded-lg hover:bg-yellow-500 transition-all flex items-center justify-center space-x-2"
-            disabled={isLoading}
-          >
-            <AlertCircle className="h-5 w-5" />
-            <span>Debug Extraction Issues</span>
-          </button>
+          {/* Debug info is now shown during extraction process - button removed */}
           <button
             onClick={onBack}
             className="px-8 py-4 bg-gray-200 text-gray-700 font-bold text-lg rounded-lg hover:bg-gray-300 transition-all"
