@@ -110,7 +110,7 @@ export default async function handler(req, res) {
  */
 async function performGrokAnalysis(images, fileName) {
   // First, get available models
-  let availableModel = 'grok-4-0709'; // Default to latest Grok model
+  let availableModel = 'grok-vision-beta'; // Default to vision model for document analysis
   
   try {
     const modelsResponse = await fetch('https://api.x.ai/v1/models', {
@@ -125,17 +125,18 @@ async function performGrokAnalysis(images, fileName) {
       const models = modelsData.data?.map(m => m.id) || [];
       console.log('🔍 Available Grok models:', models);
       
-      // Prefer the latest Grok models
-      if (models.includes('grok-4-0709')) {
-        availableModel = 'grok-4-0709';
-      } else if (models.includes('grok-vision-beta')) {
+      // Prefer vision models for document analysis
+      if (models.includes('grok-vision-beta')) {
         availableModel = 'grok-vision-beta';
-      } else if (models.includes('grok-beta')) {
-        availableModel = 'grok-beta';
-      } else if (models.includes('grok-1')) {
-        availableModel = 'grok-1';
-      } else if (models.length > 0) {
-        availableModel = models[0];
+      } else if (models.find(m => m.includes('vision'))) {
+        availableModel = models.find(m => m.includes('vision'));
+      } else {
+        // No vision models available - will throw error later
+        console.warn('⚠️ No Grok vision models available. Text-only models cannot analyze PDF images.');
+        availableModel = models.includes('grok-4-0709') ? 'grok-4-0709' : 
+                        models.includes('grok-beta') ? 'grok-beta' :
+                        models.includes('grok-1') ? 'grok-1' :
+                        models.length > 0 ? models[0] : 'grok-beta';
       }
       console.log('🎯 Using model:', availableModel);
     }
@@ -237,9 +238,9 @@ Extract 100% of document content - every number, every detail, exactly as writte
   try {
     let messageContent;
     
-    // Handle vision vs text models differently
-    if (availableModel.includes('vision') && images && images.length > 0) {
-      // Vision model - use image content
+    // Check if this is a vision model
+    if (availableModel.includes('vision')) {
+      // Vision model - use image content for real extraction
       const content = [
         { type: 'text', text: prompt }
       ];
@@ -256,29 +257,11 @@ Extract 100% of document content - every number, every detail, exactly as writte
       });
       
       messageContent = content;
+      console.log('✅ Using Grok vision model for real document analysis');
     } else {
-      // Text-only model (including grok-4-0709) - create comprehensive text prompt
-      const imageInfo = images && images.length > 0 ? 
-        `This analysis is based on a ${images.length}-page business acquisition document (CIM).` : 
-        'This is a business acquisition document analysis.';
-      
-      const enhancedPrompt = `${prompt}
-
-${imageInfo}
-
-Since this is a text-only analysis, please provide a comprehensive template response with realistic sample data that demonstrates the expected JSON structure. Use placeholder values that would be typical for an insurance agency or similar business acquisition.
-
-Example values to use:
-- Revenue: $640,000 - $853,000 range
-- EBITDA: $192,000 - $255,900 range  
-- Employee count: 5 employees
-- Business type: Insurance Agency
-- Location: California
-- Established: 2004
-
-Please provide the complete JSON structure as requested above with these sample values.`;
-      
-      messageContent = enhancedPrompt;
+      // Text-only model - cannot analyze images properly, return error
+      console.error('❌ Text-only Grok model cannot analyze document images');
+      throw new Error('Grok text-only models cannot extract data from PDF images. A vision model is required for document analysis.');
     }
 
     const response = await fetch('https://api.x.ai/v1/chat/completions', {

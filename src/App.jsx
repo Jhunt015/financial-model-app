@@ -5661,7 +5661,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState('landing');
   const [financialData, setFinancialData] = useState(null);
   const [debtServiceModel, setDebtServiceModel] = useState(null);
-  const [analysisService, setAnalysisService] = useState('grok-vision'); // 'grok-vision', 'openai-vision', 'claude-vision', 'pdf-text-openai', 'pdf-text-claude', 'textract'
+  const [analysisService, setAnalysisService] = useState('openai-vision'); // 'grok-vision', 'openai-vision', 'claude-vision', 'pdf-text-openai', 'pdf-text-claude', 'textract'
   const [extractedData, setExtractedData] = useState(null);
   const [showInvestorDashboard, setShowInvestorDashboard] = useState(false);
   const [extractionDebugData, setExtractionDebugData] = useState(null);
