@@ -13,7 +13,7 @@
 2. **Add the API Key:**
    - Click "Add New"
    - **Name:** `XAI_API_KEY`
-   - **Value:** `xai-QI3Jtobugz57a8HmiChPFCuuPujnP8HTPR45j1BA7HgHuOdrUZDvGeC953Bk0DlKrfFPcKh6nr51L8NB`
+   - **Value:** `[ENTER YOUR API KEY HERE - DO NOT COMMIT TO GIT]`
    - **Environment:** Select "All Environments" (Production, Preview, Development)
    - Click "Save"
 
