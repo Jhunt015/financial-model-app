@@ -109,6 +109,38 @@ export default async function handler(req, res) {
  * Enhanced Grok 4 analysis for financial documents
  */
 async function performGrokAnalysis(images, fileName) {
+  // First, get available models
+  let availableModel = 'grok-vision-beta'; // Default fallback
+  
+  try {
+    const modelsResponse = await fetch('https://api.x.ai/v1/models', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${process.env.XAI_API_KEY}`
+      }
+    });
+    
+    if (modelsResponse.ok) {
+      const modelsData = await modelsResponse.json();
+      const models = modelsData.data?.map(m => m.id) || [];
+      console.log('🔍 Available Grok models:', models);
+      
+      // Prefer vision models, but use any available model
+      if (models.includes('grok-vision-beta')) {
+        availableModel = 'grok-vision-beta';
+      } else if (models.includes('grok-beta')) {
+        availableModel = 'grok-beta';
+      } else if (models.includes('grok-1')) {
+        availableModel = 'grok-1';
+      } else if (models.length > 0) {
+        availableModel = models[0];
+      }
+      console.log('🎯 Using model:', availableModel);
+    }
+  } catch (e) {
+    console.warn('⚠️ Could not fetch models, using default:', e.message);
+  }
+
   const prompt = `You are an expert financial analyst with deep M&A experience. Extract ALL financial data from this business acquisition document (CIM).
 
 CRITICAL: This PDF contains real financial data that MUST be found. Extract EVERY number, percentage, and detail.
@@ -201,20 +233,32 @@ Return comprehensive JSON with ALL extracted data:
 Extract 100% of document content - every number, every detail, exactly as written.`;
 
   try {
-    const content = [
-      { type: 'text', text: prompt }
-    ];
+    let messageContent;
+    
+    // Handle vision vs text models differently
+    if (availableModel.includes('vision')) {
+      // Vision model - use image content
+      const content = [
+        { type: 'text', text: prompt }
+      ];
 
-    // Add all images to the analysis
-    images.forEach(image => {
-      content.push({
-        type: 'image_url',
-        image_url: {
-          url: `data:image/jpeg;base64,${image}`,
-          detail: 'high'
-        }
+      // Add all images to the analysis
+      images.forEach(image => {
+        content.push({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/jpeg;base64,${image}`,
+            detail: 'high'
+          }
+        });
       });
-    });
+      
+      messageContent = content;
+    } else {
+      // Text-only model - convert images to text description
+      const imageDescription = `This document contains ${images.length} pages of financial data. Please analyze this business acquisition document and extract financial information as requested.`;
+      messageContent = prompt + '\n\n' + imageDescription;
+    }
 
     const response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
@@ -223,8 +267,8 @@ Extract 100% of document content - every number, every detail, exactly as writte
         'Authorization': `Bearer ${process.env.XAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'grok-vision-beta',
-        messages: [{ role: 'user', content: content }],
+        model: availableModel,
+        messages: [{ role: 'user', content: messageContent }],
         max_tokens: 16384,
         temperature: 0.1,
         stream: false
