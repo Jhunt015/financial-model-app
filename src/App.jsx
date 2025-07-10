@@ -4,6 +4,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import * as XLSX from 'xlsx';
 import { useSupabaseAuth } from './hooks/useSupabaseAuth';
 import AuthCallback from './components/AuthCallback';
+import InvestorDashboard from './components/InvestorDashboard';
+import { extractAndAnalyze } from './utils/pdfExtractor';
 
 // Utility Functions
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -719,8 +721,15 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
     console.log(`PDF loaded: ${pdf.numPages} pages`);
     
     const images = [];
-    // For OpenAI Vision, use fewer pages initially to avoid 413 errors; others limit to reduce payload size
-    const maxPages = service === 'openai-vision' ? Math.min(pdf.numPages, 30) : Math.min(pdf.numPages, 5);
+    // Different page limits for different services
+    let maxPages;
+    if (service === 'grok-vision') {
+      maxPages = Math.min(pdf.numPages, 50); // Grok can handle more pages
+    } else if (service === 'openai-vision') {
+      maxPages = Math.min(pdf.numPages, 30); // OpenAI Vision with reduced pages
+    } else {
+      maxPages = Math.min(pdf.numPages, 5); // Others limited
+    }
     
     console.log(`Will process ${maxPages} pages for ${service} analysis`);
     
@@ -729,8 +738,15 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
       console.log(`Converting page ${i}/${maxPages} to image...`);
       
       const page = await pdf.getPage(i);
-      // Much lower scale for OpenAI Vision to reduce file size significantly
-      const scale = service === 'openai-vision' ? 0.8 : 1.5; // Very low scale for vision to avoid 413 errors
+      // Different scales for different services
+      let scale;
+      if (service === 'grok-vision') {
+        scale = 1.2; // Higher quality for Grok
+      } else if (service === 'openai-vision') {
+        scale = 0.8; // Lower scale for OpenAI to avoid 413 errors
+      } else {
+        scale = 1.5; // Default scale
+      }
       const viewport = page.getViewport({ scale: scale });
       
       const canvas = document.createElement('canvas');
@@ -743,8 +759,15 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
         viewport: viewport 
       }).promise;
       
-      // Convert to JPEG with higher compression for smaller size (much lower quality for OpenAI Vision to avoid 413 errors)
-      const compressionQuality = service === 'openai-vision' ? 0.2 : 0.6; // Very high compression for vision
+      // Different compression for different services
+      let compressionQuality;
+      if (service === 'grok-vision') {
+        compressionQuality = 0.7; // Higher quality for Grok
+      } else if (service === 'openai-vision') {
+        compressionQuality = 0.2; // High compression for OpenAI to avoid 413 errors
+      } else {
+        compressionQuality = 0.6; // Default compression
+      }
       const base64 = canvas.toDataURL('image/jpeg', compressionQuality).split(',')[1];
       images.push(base64);
       
@@ -864,6 +887,7 @@ const analyzeDocumentWithTextExtraction = async (file) => {
 const analyzePDFWithImages = async (file, images, service = 'pdf-text-openai', setExtractedData) => {
   // Service URLs mapping
   const serviceUrls = {
+    'grok-vision': '/api/analyze-grok',
     'pdf-text-openai': '/api/analyze-pdf-text',
     'pdf-text-claude': '/api/analyze-pdf-text',
     'openai-vision': '/api/analyze-openai',
@@ -1176,18 +1200,23 @@ const generateRecommendations = (scores, data) => {
   return recommendations;
 };
 
-// Calculate financial metrics from raw data
-const calculateFinancialMetrics = (revenue, costOfRevenue, operatingExpenses, netIncome) => {
+// Enhanced financial calculations for insurance agencies and service businesses
+const calculateFinancialMetrics = (revenue, costOfRevenue, operatingExpenses, netIncome, commissions, fees, premiums, extractedExpenses, ownerSalary) => {
   const grossProfit = {};
   const ebitda = {};
   const sde = {};
+  const netIncomeCalc = {};
   
   // Get all periods from the data
   const periods = new Set([
     ...Object.keys(revenue || {}),
     ...Object.keys(costOfRevenue || {}),
     ...Object.keys(operatingExpenses || {}),
-    ...Object.keys(netIncome || {})
+    ...Object.keys(netIncome || {}),
+    ...Object.keys(commissions || {}),
+    ...Object.keys(fees || {}),
+    ...Object.keys(premiums || {}),
+    ...Object.keys(extractedExpenses || {})
   ]);
   
   periods.forEach(period => {
@@ -1195,28 +1224,62 @@ const calculateFinancialMetrics = (revenue, costOfRevenue, operatingExpenses, ne
     const cogs = costOfRevenue[period] || 0;
     const opex = operatingExpenses[period] || 0;
     const net = netIncome[period] || 0;
+    const comm = commissions[period] || 0;
+    const fee = fees[period] || 0;
+    const prem = premiums[period] || 0;
+    const expenses = extractedExpenses[period] || 0;
     
-    // Calculate Gross Profit: Revenue - COGS
-    if (rev > 0) {
-      grossProfit[period] = rev - cogs;
+    // For insurance agencies, total revenue often includes commissions + fees
+    let totalRevenue = rev;
+    if (totalRevenue === 0 && (comm > 0 || fee > 0)) {
+      totalRevenue = comm + fee;
+      console.log(`📊 Calculated total revenue for ${period}: ${totalRevenue} (commissions: ${comm} + fees: ${fee})`);
     }
     
-    // Calculate EBITDA: Revenue - COGS - Operating Expenses
-    // For insurance agencies: Revenue - Operating Expenses (no COGS typically)
-    if (rev > 0 && (opex > 0 || cogs > 0)) {
-      ebitda[period] = rev - cogs - opex;
+    // Calculate Gross Profit: For insurance agencies, typically Revenue - Direct Costs
+    // Insurance agencies typically have high gross margins (80-95%)
+    if (totalRevenue > 0) {
+      grossProfit[period] = totalRevenue - cogs;
+    }
+    
+    // Estimate operating expenses if not provided
+    let estimatedOpex = opex || expenses;
+    if (estimatedOpex === 0 && totalRevenue > 0) {
+      // For insurance agencies, typical operating expenses are 60-80% of revenue
+      // Conservative estimate: 70% of revenue
+      estimatedOpex = totalRevenue * 0.7;
+      console.log(`📊 Estimated operating expenses for ${period}: ${estimatedOpex} (70% of revenue)`);
+    }
+    
+    // Calculate EBITDA: Revenue - Operating Expenses
+    if (totalRevenue > 0) {
+      ebitda[period] = totalRevenue - estimatedOpex;
+      console.log(`📊 Calculated EBITDA for ${period}: ${ebitda[period]} (revenue: ${totalRevenue} - opex: ${estimatedOpex})`);
+    }
+    
+    // Calculate Net Income if not provided
+    if (net === 0 && ebitda[period]) {
+      // Estimate taxes, interest, depreciation (typically 5-15% of EBITDA for small businesses)
+      const taxDepreciation = ebitda[period] * 0.1;
+      netIncomeCalc[period] = ebitda[period] - taxDepreciation;
+      console.log(`📊 Calculated net income for ${period}: ${netIncomeCalc[period]} (EBITDA: ${ebitda[period]} - taxes/depreciation: ${taxDepreciation})`);
     }
     
     // Calculate SDE (Seller's Discretionary Earnings): EBITDA + Owner benefits
-    // For small businesses, often approximate as EBITDA + estimated owner salary
     if (ebitda[period]) {
-      // Conservative estimate: add back estimated owner salary (typically $60K-$100K for small business)
-      const estimatedOwnerSalary = rev > 500000 ? 80000 : 60000;
-      sde[period] = ebitda[period] + estimatedOwnerSalary;
+      // Use extracted owner salary if available, otherwise estimate
+      let ownerSalaryAmount = ownerSalary || 0;
+      if (ownerSalaryAmount === 0) {
+        // For insurance agencies, owner salary typically 10-15% of revenue
+        ownerSalaryAmount = totalRevenue > 500000 ? totalRevenue * 0.12 : Math.min(totalRevenue * 0.15, 100000);
+      }
+      
+      sde[period] = ebitda[period] + ownerSalaryAmount;
+      console.log(`📊 Calculated SDE for ${period}: ${sde[period]} (EBITDA: ${ebitda[period]} + owner salary: ${ownerSalaryAmount})`);
     }
   });
   
-  return { grossProfit, ebitda, sde };
+  return { grossProfit, ebitda, sde, netIncome: netIncomeCalc };
 };
 
 // Validate and merge extracted metrics with calculated ones
@@ -1277,21 +1340,95 @@ const processTextractResponse = (textractData, file) => {
     hasPurchasePrice: !!structuredData.purchasePrice
   });
   
-  // Extract and validate financial data
-  const revenue = textractFinancials.revenue || structuredData.financialData?.revenue || {};
-  const costOfRevenue = textractFinancials.cogs || textractFinancials.costOfRevenue || structuredData.financialData?.costOfRevenue || {};
-  const operatingExpenses = textractFinancials.operatingExpenses || structuredData.financialData?.operatingExpenses || {};
-  const netIncome = textractFinancials.netIncome || structuredData.financialData?.netIncome || {};
-  
-  console.log('💰 Financial data extracted:', {
-    revenueKeys: Object.keys(revenue),
-    costOfRevenueKeys: Object.keys(costOfRevenue),
-    operatingExpensesKeys: Object.keys(operatingExpenses),
-    netIncomeKeys: Object.keys(netIncome)
+  // Handle new comprehensive data structure from rawResponse
+  const rawApiResponse = textractData.rawResponse || textractData;
+  console.log('🔍 Raw API Response Analysis:', {
+    hasRawResponse: !!rawApiResponse,
+    rawResponseKeys: rawApiResponse ? Object.keys(rawApiResponse) : [],
+    hasFinancialData: !!rawApiResponse?.financialData,
+    hasBusinessOverview: !!rawApiResponse?.businessOverview,
+    hasProductsServices: !!rawApiResponse?.productsServices,
+    hasEmployees: !!rawApiResponse?.employeesManagement,
+    hasGrowthOps: !!rawApiResponse?.growthOpportunities,
+    hasRisks: !!rawApiResponse?.risks
   });
   
-  // Calculate missing financial metrics
-  const { grossProfit, ebitda, sde } = calculateFinancialMetrics(revenue, costOfRevenue, operatingExpenses, netIncome);
+  // Extract comprehensive financial data from new ultra-detailed structure
+  const comprehensiveFinancials = rawApiResponse?.financialData || {};
+  
+  // Handle new detailed revenue structure
+  const revenueData = comprehensiveFinancials.revenue || {};
+  const revenue = revenueData.total || revenueData || textractFinancials.revenue || structuredData.financialData?.revenue || {};
+  const commissions = revenueData.byCategory?.commissions || comprehensiveFinancials.commissions || {};
+  const fees = revenueData.byCategory?.fees || comprehensiveFinancials.fees || {};
+  const premiums = comprehensiveFinancials.premiums || {};
+  
+  // Handle new detailed expense structure
+  const expenseData = comprehensiveFinancials.expenses || {};
+  const expenses = expenseData.total || expenseData || {};
+  const costOfRevenue = textractFinancials.cogs || textractFinancials.costOfRevenue || structuredData.financialData?.costOfRevenue || {};
+  const operatingExpenses = expenses || textractFinancials.operatingExpenses || structuredData.financialData?.operatingExpenses || {};
+  
+  // Handle new EBITDA structure
+  const ebitdaData = comprehensiveFinancials.ebitda || {};
+  const netIncome = comprehensiveFinancials.netIncome || textractFinancials.netIncome || structuredData.financialData?.netIncome || {};
+  const ebitdaExtracted = ebitdaData.reported || ebitdaData || textractFinancials.ebitda || {};
+  const adjustedEbitda = ebitdaData.adjusted || {};
+  const recastEbitda = ebitdaData.recast || {};
+  
+  console.log('💰 Comprehensive financial data extracted:', {
+    revenueKeys: Object.keys(revenue),
+    commissionsKeys: Object.keys(commissions),
+    feesKeys: Object.keys(fees),
+    premiumsKeys: Object.keys(premiums),
+    expensesKeys: Object.keys(expenses),
+    expenseCategories: expenseData.byCategory ? Object.keys(expenseData.byCategory) : [],
+    costOfRevenueKeys: Object.keys(costOfRevenue),
+    operatingExpensesKeys: Object.keys(operatingExpenses),
+    netIncomeKeys: Object.keys(netIncome),
+    ebitdaExtractedKeys: Object.keys(ebitdaExtracted),
+    adjustedEbitdaKeys: Object.keys(adjustedEbitda),
+    recastEbitdaKeys: Object.keys(recastEbitda),
+    askingPrice: comprehensiveFinancials.askingPrice,
+    askingPriceAmount: comprehensiveFinancials.askingPriceAmount,
+    valuationMultiple: comprehensiveFinancials.valuationMultiple,
+    metrics: comprehensiveFinancials.metrics,
+    adjustments: comprehensiveFinancials.adjustments,
+    validation: rawApiResponse?.validation
+  });
+  
+  // Extract owner salary from detailed employee structure
+  let ownerSalary = 0;
+  if (rawApiResponse?.employeesManagement?.sellerInvolvement?.compensation) {
+    ownerSalary = parseFloat(rawApiResponse.employeesManagement.sellerInvolvement.compensation.replace(/[^0-9.]/g, ''));
+  } else if (rawApiResponse?.employeesManagement?.detailedRoster) {
+    // Find owner/seller in detailed roster
+    const owner = rawApiResponse.employeesManagement.detailedRoster.find(emp => 
+      emp.title?.toLowerCase().includes('owner') || 
+      emp.title?.toLowerCase().includes('president') ||
+      emp.title?.toLowerCase().includes('ceo')
+    );
+    if (owner?.compensation?.baseSalary) {
+      ownerSalary = owner.compensation.baseSalary;
+    }
+  } else if (rawApiResponse?.employeesManagement?.compensation) {
+    ownerSalary = parseFloat(rawApiResponse.employeesManagement.compensation.replace(/[^0-9.]/g, ''));
+  }
+  
+  console.log('💼 Owner salary extracted:', ownerSalary);
+  
+  // Calculate missing financial metrics with enhanced parameters
+  const { grossProfit, ebitda, sde, netIncome: netIncomeCalc } = calculateFinancialMetrics(
+    revenue, 
+    costOfRevenue, 
+    operatingExpenses, 
+    netIncome, 
+    commissions, 
+    fees, 
+    premiums, 
+    expenses, 
+    ownerSalary
+  );
   
   // Combine extracted gross profit with calculated (prefer extracted if reasonable)
   const finalGrossProfit = validateAndMergeMetrics(
@@ -1310,52 +1447,103 @@ const processTextractResponse = (textractData, file) => {
   // Use calculated SDE (more reliable for small businesses)
   const finalSDE = structuredData.financialData?.sde || sde;
   
+  // Use calculated net income if extracted is empty
+  const finalNetIncome = validateAndMergeMetrics(
+    netIncome,
+    netIncomeCalc,
+    revenue
+  );
+  
   // Get the correct extraction method from metadata
   const extractionMethod = textractData.metadata?.extractionMethod || 'Unknown Analysis';
   
   console.log('📈 Final calculated metrics:', {
     grossProfitKeys: Object.keys(finalGrossProfit),
     ebitdaKeys: Object.keys(finalEbitda),
-    sdeKeys: Object.keys(finalSDE)
+    sdeKeys: Object.keys(finalSDE),
+    netIncomeKeys: Object.keys(finalNetIncome)
   });
   
   const result = {
     id: generateId(),
     source: 'pdf',
-    periods: structuredData.financialData?.periods || Object.keys(textractFinancials.years || {}) || ['TTM'],
+    periods: comprehensiveFinancials.periods || structuredData.financialData?.periods || Object.keys(textractFinancials.years || {}) || ['TTM'],
     statements: { 
       incomeStatement: {
         revenue: revenue,
+        commissions: commissions,
+        fees: fees,
+        premiums: premiums,
         commissionIncome: structuredData.financialData?.commissionIncome || {},
         costOfRevenue: costOfRevenue,
         grossProfit: finalGrossProfit,
         operatingExpenses: operatingExpenses,
         ebitda: finalEbitda,
-        adjustedEbitda: structuredData.financialData?.adjustedEbitda || {},
-        recastEbitda: structuredData.financialData?.recastEbitda || {},
+        adjustedEbitda: adjustedEbitda || structuredData.financialData?.adjustedEbitda || {},
+        recastEbitda: recastEbitda || structuredData.financialData?.recastEbitda || {},
         sde: finalSDE,
-        netIncome: netIncome,
+        netIncome: finalNetIncome,
         cashFlow: structuredData.financialData?.cashFlow || {},
         adjustments: textractFinancials.adjustments || []
       }
+    },
+    // NEW: Store comprehensive business analysis
+    businessAnalysis: {
+      overview: rawApiResponse?.businessOverview || {},
+      products: rawApiResponse?.productsServices || {},
+      employees: rawApiResponse?.employeesManagement || {},
+      customers: rawApiResponse?.customers || {},
+      opportunities: rawApiResponse?.growthOpportunities || [],
+      advantages: rawApiResponse?.competitiveAdvantages || [],
+      risks: rawApiResponse?.risks || [],
+      marketAnalysis: rawApiResponse?.marketAnalysis || {},
+      technology: rawApiResponse?.technology || {},
+      financialControls: rawApiResponse?.financialControls || {},
+      narrative: rawApiResponse?.narrative || intelligence,
+      keyHighlights: rawApiResponse?.keyHighlights || []
     },
     metadata: {
       fileName: file.name,
       uploadDate: new Date(),
       confidence: textractData.confidence || 0.85,
-      businessType: structuredData.businessInfo?.type || 'General Business',
-      businessName: structuredData.businessInfo?.name,
+      businessType: rawApiResponse?.businessOverview?.businessType || structuredData.businessInfo?.type || 'General Business',
+      businessName: rawApiResponse?.businessOverview?.companyName || structuredData.businessInfo?.name,
+      location: rawApiResponse?.businessOverview?.location,
+      yearsInBusiness: rawApiResponse?.businessOverview?.yearsInBusiness,
+      establishedYear: rawApiResponse?.businessOverview?.establishedYear,
       extractionMethod: extractionMethod,
-      purchasePrice: structuredData.purchasePrice,
+      purchasePrice: comprehensiveFinancials.askingPriceAmount || structuredData.purchasePrice,
+      askingPrice: comprehensiveFinancials.askingPrice,
+      askingPriceAmount: comprehensiveFinancials.askingPriceAmount,
+      valuationMultiple: comprehensiveFinancials.valuationMultiple,
       priceSource: structuredData.priceSource,
+      policyCount: comprehensiveFinancials.policyCount,
+      retention: comprehensiveFinancials.retention || comprehensiveFinancials.metrics?.customerRetention,
+      totalEmployees: rawApiResponse?.employeesManagement?.totalEmployees?.fullTime || rawApiResponse?.employeesManagement?.totalEmployees,
+      financialAdjustments: comprehensiveFinancials.adjustments || [],
+      financialMetrics: comprehensiveFinancials.metrics || {},
+      dataSources: comprehensiveFinancials.dataSources || [],
+      carriers: rawApiResponse?.carriers || [],
       tablesExtracted: textractData.textractData?.allTables?.length || 0,
       // Store the intelligence narrative
-      analysisNarrative: intelligence,
+      analysisNarrative: rawApiResponse?.narrative || intelligence,
       // Store raw Textract data for debugging
       textractMetadata: textractData.textractData?.documentMetadata,
       // Store complete raw response for debugging
       rawApiResponse: textractData.rawResponse || textractData,
-      debugInfo: textractData.debugInfo || {}
+      debugInfo: textractData.debugInfo || {},
+      // Extraction completeness tracking
+      extractionCompleteness: {
+        hasFinancialData: !!(revenue && Object.keys(revenue).length > 0),
+        hasBusinessOverview: !!(rawApiResponse?.businessOverview && Object.keys(rawApiResponse.businessOverview).length > 0),
+        hasEmployees: !!(rawApiResponse?.employeesManagement && Object.keys(rawApiResponse.employeesManagement).length > 0),
+        hasGrowthOps: !!(rawApiResponse?.growthOpportunities && rawApiResponse.growthOpportunities.length > 0),
+        hasRisks: !!(rawApiResponse?.risks && rawApiResponse.risks.length > 0),
+        hasNarrative: !!(rawApiResponse?.narrative && rawApiResponse.narrative.length > 100),
+        hasCarriers: !!(rawApiResponse?.carriers && rawApiResponse.carriers.length > 0),
+        hasAdjustments: !!(comprehensiveFinancials.adjustments && comprehensiveFinancials.adjustments.length > 0),
+        validation: rawApiResponse?.validation || {}
+      }
     }
   };
   
@@ -3153,7 +3341,7 @@ const identifyBusinessType = (fileName, incomeStatement, documentText = '') => {
 };
 
 // Analysis Summary Component
-function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
+function AnalysisSummary({ model, onBuildModel, onDeepAnalysis, onBack, onViewModels, onViewInvestorDashboard, hasInvestorData }) {
   const [isLoading, setIsLoading] = useState(false);
   const financialData = model.historicalData;
   const ttmRevenue = financialData.statements.incomeStatement?.revenue['TTM'] || 
@@ -3615,7 +3803,27 @@ function AnalysisSummary({ model, onBuildModel, onBack, onViewModels }) {
             <Calculator className="h-5 w-5" />
             <span>Build 5-Year Financial Model</span>
           </button>
-          {/* Debug info is now shown during extraction process - button removed */}
+          
+          {hasInvestorData && onDeepAnalysis && (
+            <button
+              onClick={onDeepAnalysis}
+              className="px-8 py-4 bg-purple-600 text-white font-bold text-lg rounded-lg hover:bg-purple-700 transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-2"
+            >
+              <Eye className="h-5 w-5" />
+              <span>Deep Analysis</span>
+            </button>
+          )}
+          
+          {hasInvestorData && onViewInvestorDashboard && (
+            <button
+              onClick={onViewInvestorDashboard}
+              className="px-8 py-4 bg-blue-600 text-white font-bold text-lg rounded-lg hover:bg-blue-700 transition-all transform hover:scale-105 shadow-lg flex items-center justify-center space-x-2"
+            >
+              <BarChart3 className="h-5 w-5" />
+              <span>View Investor Dashboard</span>
+            </button>
+          )}
+          
           <button
             onClick={onBack}
             className="px-8 py-4 bg-gray-200 text-gray-700 font-bold text-lg rounded-lg hover:bg-gray-300 transition-all"
@@ -4881,7 +5089,7 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
       setProcessingStep('Complete!');
       
       setTimeout(() => {
-        onFileProcessed(result);
+        onFileProcessed(result, file);
       }, 500);
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Failed to process file');
@@ -4925,7 +5133,17 @@ function FileUpload({ onFileProcessed, onError, onViewModels, user, analysisServ
               <Settings className="h-6 w-6 text-blue-600" />
               <h3 className="text-lg font-semibold text-gray-800">Choose Analysis Service</h3>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+              <button
+                onClick={() => setAnalysisService('grok-vision')}
+                className={`px-4 py-3 rounded-lg font-medium transition-all border-2 text-sm ${
+                  analysisService === 'grok-vision'
+                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white border-purple-600 shadow-lg transform scale-105'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400 hover:bg-purple-50'
+                }`}
+              >
+                🚀 Grok 4 Vision
+              </button>
               <button
                 onClick={() => setAnalysisService('pdf-text-openai')}
                 className={`px-4 py-3 rounded-lg font-medium transition-all border-2 text-sm ${
@@ -5431,7 +5649,10 @@ export default function App() {
   const [currentView, setCurrentView] = useState('landing');
   const [financialData, setFinancialData] = useState(null);
   const [debtServiceModel, setDebtServiceModel] = useState(null);
-  const [analysisService, setAnalysisService] = useState('openai-vision'); // 'pdf-text-openai', 'pdf-text-claude', 'textract', 'openai-vision', 'claude-vision'
+  const [analysisService, setAnalysisService] = useState('grok-vision'); // 'grok-vision', 'openai-vision', 'claude-vision', 'pdf-text-openai', 'pdf-text-claude', 'textract'
+  const [extractedData, setExtractedData] = useState(null);
+  const [showInvestorDashboard, setShowInvestorDashboard] = useState(false);
+  const [extractionDebugData, setExtractionDebugData] = useState(null);
 
   // Check if we're on the auth callback route or model route
   useEffect(() => {
@@ -5447,8 +5668,42 @@ export default function App() {
   const [pendingModelName, setPendingModelName] = useState(null);
   const [selectedModel, setSelectedModel] = useState(null);
 
-  const handleFileProcessed = (data) => {
+  const handleFileProcessed = async (data, originalFile = null) => {
+    console.log('📊 Processing file data:', data);
+    
+    // Store the extracted data
+    setExtractedData(data);
     setFinancialData(data);
+    
+    // If we have the original PDF file, run aggressive extraction
+    if (originalFile && originalFile.type === 'application/pdf') {
+      try {
+        console.log('🔍 Running enhanced PDF extraction...');
+        const enhancedData = await extractAndAnalyze(originalFile);
+        setExtractionDebugData(enhancedData);
+        
+        console.log('✅ Enhanced extraction completed:', enhancedData);
+        
+        // Merge enhanced data with existing data
+        const mergedData = {
+          ...data,
+          enhancedExtraction: enhancedData,
+          metadata: {
+            ...data.metadata,
+            enhancedExtractionAvailable: true,
+            enhancedExtractionConfidence: enhancedData.summary?.confidence_score
+          }
+        };
+        
+        setExtractedData(mergedData);
+        setFinancialData(mergedData);
+        
+      } catch (error) {
+        console.error('❌ Enhanced extraction failed:', error);
+        // Continue with original data
+      }
+    }
+    
     const assumptions = generateSmartAssumptions(data);
     const model = buildDebtServiceModel(data, assumptions);
     setDebtServiceModel(model);
@@ -5464,6 +5719,18 @@ export default function App() {
     } else {
       // User is logged in, go directly to model building
       setCurrentView('model');
+    }
+  };
+
+  const handleDeepAnalysis = () => {
+    if (!user) {
+      // Store that user wants to access deep analysis after login
+      localStorage.setItem('auth-redirect', '/investor-dashboard')
+      setLoginMode('save');
+      setShowLoginModal(true);
+    } else {
+      // User is logged in, go directly to investor dashboard
+      setCurrentView('investor-dashboard');
     }
   };
 
@@ -5610,9 +5877,35 @@ export default function App() {
         <AnalysisSummary 
           model={debtServiceModel}
           onBuildModel={handleBuildModel}
+          onDeepAnalysis={handleDeepAnalysis}
           onBack={() => setCurrentView('upload')}
           onViewModels={handleMyModels}
+          onViewInvestorDashboard={() => setCurrentView('investor-dashboard')}
+          hasInvestorData={!!extractedData}
         />
+      )}
+      
+      {currentView === 'investor-dashboard' && extractedData && (
+        <div>
+          <div className="mb-6 flex justify-between items-center bg-white p-4 border-b">
+            <button
+              onClick={() => setCurrentView('summary')}
+              className="flex items-center px-4 py-2 text-gray-600 hover:text-gray-800"
+            >
+              ← Back to Analysis
+            </button>
+            <button
+              onClick={() => setShowInvestorDashboard(!showInvestorDashboard)}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              {showInvestorDashboard ? 'Hide Dashboard' : 'Show Dashboard'}
+            </button>
+          </div>
+          <InvestorDashboard 
+            extractedData={extractedData}
+            rawData={extractionDebugData}
+          />
+        </div>
       )}
       
       {currentView === 'model' && financialData && debtServiceModel && (
