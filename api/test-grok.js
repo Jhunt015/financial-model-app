@@ -122,20 +122,20 @@ export default async function handler(req, res) {
     }
     
     console.log('✅ Grok API test successful!');
-    console.log('📝 Response:', result.response);
+    console.log('📝 Response:', successfulModel.response);
     
     // Test vision capabilities if we found a vision model
     let imageVisionTest = { success: false, reason: 'No vision model found' };
     
-    if (result.model.includes('vision')) {
+    if (successfulModel.model.includes('vision')) {
       console.log('🖼️ Testing vision capabilities...');
-      imageVisionTest = { success: true, reason: 'Vision model available', model: result.model };
+      imageVisionTest = { success: true, reason: 'Vision model available', model: successfulModel.model };
     }
     
     return res.status(200).json({
       success: true,
-      message: `Grok API is working correctly with model: ${result.model}`,
-      workingModel: result,
+      message: `Grok API is working correctly with model: ${successfulModel.model}`,
+      workingModel: successfulModel,
       availableModels,
       imageVisionTest: imageVisionTest,
       apiKeyConfigured: true,
