@@ -50,6 +50,7 @@ export default async function handler(req, res) {
 
     // Try different model names
     const modelsToTry = [
+      'grok-4-0709',
       'grok-vision-beta',
       'grok-beta', 
       'grok-1',
