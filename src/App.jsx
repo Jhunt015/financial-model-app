@@ -11,6 +11,9 @@ import { extractAndAnalyze } from './utils/pdfExtractor';
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 const formatCurrency = (value) => {
+  if (!value || !isFinite(value) || isNaN(value) || value === 0) {
+    return '$0';
+  }
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
@@ -20,6 +23,9 @@ const formatCurrency = (value) => {
 };
 
 const formatPercent = (value) => {
+  if (!value || !isFinite(value) || isNaN(value)) {
+    return '0.0%';
+  }
   return `${(value * 100).toFixed(1)}%`;
 };
 
@@ -3344,18 +3350,24 @@ const identifyBusinessType = (fileName, incomeStatement, documentText = '') => {
 function AnalysisSummary({ model, onBuildModel, onDeepAnalysis, onBack, onViewModels, onViewInvestorDashboard, hasInvestorData }) {
   const [isLoading, setIsLoading] = useState(false);
   const financialData = model.historicalData;
-  const ttmRevenue = financialData.statements.incomeStatement?.revenue['TTM'] || 
-                     Math.max(...Object.values(financialData.statements.incomeStatement.revenue));
-  const ttmEBITDA = financialData.statements.incomeStatement?.ebitda['TTM'] || 
-                    Math.max(...Object.values(financialData.statements.incomeStatement.ebitda));
+  
+  // Safely get TTM Revenue with proper fallbacks
+  const revenueValues = Object.values(financialData.statements.incomeStatement?.revenue || {}).filter(v => v && v > 0);
+  const ttmRevenue = financialData.statements.incomeStatement?.revenue?.['TTM'] || 
+                     (revenueValues.length > 0 ? Math.max(...revenueValues) : 0);
+  
+  // Safely get TTM EBITDA with proper fallbacks  
+  const ebitdaValues = Object.values(financialData.statements.incomeStatement?.ebitda || {}).filter(v => v && v > 0);
+  const ttmEBITDA = financialData.statements.incomeStatement?.ebitda?.['TTM'] || 
+                    (ebitdaValues.length > 0 ? Math.max(...ebitdaValues) : 0);
   
   // State for editable purchase price
   const [editablePurchasePrice, setEditablePurchasePrice] = useState(model.assumptions.purchasePrice);
   const [isEditingPrice, setIsEditingPrice] = useState(false);
   const [customPriceInput, setCustomPriceInput] = useState('');
   
-  const purchasePrice = editablePurchasePrice;
-  const sdeMultiple = ttmEBITDA > 0 ? purchasePrice / ttmEBITDA : 0;
+  const purchasePrice = editablePurchasePrice || 0;
+  const sdeMultiple = (ttmEBITDA > 0 && purchasePrice > 0) ? purchasePrice / ttmEBITDA : 0;
   
   // Determine if price was estimated or extracted
   const priceSource = model.assumptions.priceSource || 'estimated';
@@ -5649,7 +5661,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState('landing');
   const [financialData, setFinancialData] = useState(null);
   const [debtServiceModel, setDebtServiceModel] = useState(null);
-  const [analysisService, setAnalysisService] = useState('grok-vision'); // 'grok-vision', 'openai-vision', 'claude-vision', 'pdf-text-openai', 'pdf-text-claude', 'textract'
+  const [analysisService, setAnalysisService] = useState('openai-vision'); // 'grok-vision', 'openai-vision', 'claude-vision', 'pdf-text-openai', 'pdf-text-claude', 'textract'
   const [extractedData, setExtractedData] = useState(null);
   const [showInvestorDashboard, setShowInvestorDashboard] = useState(false);
   const [extractionDebugData, setExtractionDebugData] = useState(null);

@@ -232,7 +232,14 @@ Extract 100% of document content - every number, every detail, exactly as writte
     });
 
     if (!response.ok) {
-      throw new Error(`Grok API failed: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error('❌ Grok API Error Details:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        body: errorText
+      });
+      throw new Error(`Grok API failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const result = await response.json();
