@@ -33,11 +33,16 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'grok-beta',
+        model: 'grok-vision-beta',
         messages: [
           { 
             role: 'user', 
-            content: 'Hello! Please respond with "API test successful" if you can see this message.' 
+            content: [
+              {
+                type: 'text',
+                text: 'Hello! Please respond with "API test successful" if you can see this message.'
+              }
+            ]
           }
         ],
         max_tokens: 50,
@@ -75,13 +80,16 @@ export default async function handler(req, res) {
     }
     
     const result = await response.json();
-    console.log('✅ Grok API test successful!');
+    console.log('✅ Grok Vision API test successful!');
     console.log('📝 Response:', result.choices[0].message.content);
     
-    // Test vision model availability
-    let visionTest = null;
+    // Test with a small image to verify vision capabilities
+    let imageVisionTest = null;
     try {
-      const visionResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+      // Create a simple test image (1x1 red pixel in base64)
+      const testImageBase64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwA/wA==';
+      
+      const imageTestResponse = await fetch('https://api.x.ai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -95,7 +103,14 @@ export default async function handler(req, res) {
               content: [
                 { 
                   type: 'text', 
-                  text: 'Vision test - please respond with "Vision working"' 
+                  text: 'This is a test image. Please respond with "Image vision working" if you can process images.' 
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:image/jpeg;base64,${testImageBase64}`,
+                    detail: 'low'
+                  }
                 }
               ]
             }
@@ -105,37 +120,37 @@ export default async function handler(req, res) {
         })
       });
       
-      if (visionResponse.ok) {
-        const visionResult = await visionResponse.json();
-        visionTest = {
+      if (imageTestResponse.ok) {
+        const imageResult = await imageTestResponse.json();
+        imageVisionTest = {
           success: true,
-          model: visionResult.model,
-          response: visionResult.choices[0].message.content
+          model: imageResult.model,
+          response: imageResult.choices[0].message.content
         };
       } else {
-        const visionError = await visionResponse.text();
-        visionTest = {
+        const imageError = await imageTestResponse.text();
+        imageVisionTest = {
           success: false,
-          status: visionResponse.status,
-          error: visionError
+          status: imageTestResponse.status,
+          error: imageError
         };
       }
-    } catch (visionError) {
-      visionTest = {
+    } catch (imageError) {
+      imageVisionTest = {
         success: false,
-        error: visionError.message
+        error: imageError.message
       };
     }
     
     return res.status(200).json({
       success: true,
-      message: 'Grok API key is working correctly',
-      textModel: {
+      message: 'Grok Vision API is working correctly',
+      visionModel: {
         model: result.model,
         response: result.choices[0].message.content,
         usage: result.usage
       },
-      visionModel: visionTest,
+      imageVisionTest: imageVisionTest,
       apiKeyConfigured: true,
       apiKeyLength: apiKey.length,
       timestamp: new Date().toISOString()
