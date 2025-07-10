@@ -5,8 +5,13 @@
 Add the following environment variable to your Vercel project:
 
 ```
-XAI_API_KEY=xai-wvP0QPKgygyAnQ9IDj2oKpb6oXjTtFwpH97qXJUzjUTvf3Ov25x9jOazEWgoRq2zEMYZ7wcfTiWPUpZ6
+XAI_API_KEY=xai-[YOUR_SECURE_API_KEY_HERE]
 ```
+
+**⚠️ SECURITY WARNING:** 
+- Never commit API keys to Git repositories
+- Add keys only through Vercel dashboard
+- Keep your API keys private and secure
 
 ## Steps to Deploy:
 

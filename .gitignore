@@ -39,3 +39,13 @@ uploads/
 # Additional logs
 vite.log
 .vercel
+
+# API Keys and Secrets (Security)
+*.key
+*.pem
+secrets.json
+api-keys.txt
+.secrets
+**/api-key*
+**/*key*.txt
+**/*secret*.json
