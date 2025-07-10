@@ -282,7 +282,7 @@ Extract 100% of document content - every number, every detail, exactly as writte
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '50mb',
+      sizeLimit: '25mb',
     },
     maxDuration: 300,
   },

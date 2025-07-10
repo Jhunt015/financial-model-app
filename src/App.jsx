@@ -724,7 +724,7 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
     // Different page limits for different services
     let maxPages;
     if (service === 'grok-vision') {
-      maxPages = Math.min(pdf.numPages, 50); // Grok can handle more pages
+      maxPages = Math.min(pdf.numPages, 15); // Reduced pages for Grok to avoid 413 errors
     } else if (service === 'openai-vision') {
       maxPages = Math.min(pdf.numPages, 30); // OpenAI Vision with reduced pages
     } else {
@@ -741,7 +741,7 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
       // Different scales for different services
       let scale;
       if (service === 'grok-vision') {
-        scale = 1.2; // Higher quality for Grok
+        scale = 0.6; // Reduced scale for Grok to avoid 413 errors
       } else if (service === 'openai-vision') {
         scale = 0.8; // Lower scale for OpenAI to avoid 413 errors
       } else {
@@ -762,7 +762,7 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
       // Different compression for different services
       let compressionQuality;
       if (service === 'grok-vision') {
-        compressionQuality = 0.7; // Higher quality for Grok
+        compressionQuality = 0.2; // High compression for Grok to avoid 413 errors
       } else if (service === 'openai-vision') {
         compressionQuality = 0.2; // High compression for OpenAI to avoid 413 errors
       } else {
@@ -784,12 +784,12 @@ const processPDFFile = async (file, setProgress, service = 'openai', setExtracte
     const totalSizeMB = images.reduce((sum, img) => sum + img.length, 0) / 1024 / 1024;
     console.log(`Total image data size: ${totalSizeMB.toFixed(2)} MB`);
     
-    // Check if payload is too large for Vercel (smaller limit for OpenAI Vision due to 413 errors)
-    const maxSizeMB = service === 'openai-vision' ? 10 : 10;
+    // Check if payload is too large for Vercel (smaller limit for vision APIs due to 413 errors)
+    const maxSizeMB = (service === 'openai-vision' || service === 'grok-vision') ? 8 : 10;
     if (totalSizeMB > maxSizeMB) {
-      if (service === 'openai-vision' && images.length > 15) {
-        // Try with fewer pages for OpenAI Vision - progressive reduction
-        const reductionSteps = [30, 20, 15, 10];
+      if ((service === 'openai-vision' || service === 'grok-vision') && images.length > 5) {
+        // Try with fewer pages for Vision APIs - progressive reduction
+        const reductionSteps = service === 'grok-vision' ? [10, 8, 5, 3] : [15, 10, 8, 5];
         
         for (const pageLimit of reductionSteps) {
           if (images.length > pageLimit) {
