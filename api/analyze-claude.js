@@ -9,6 +9,61 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  if (req.method === 'GET') {
+    // Test endpoint - check if Claude API is working
+    try {
+      if (!process.env.ANTHROPIC_API_KEY) {
+        return res.status(500).json({
+          success: false,
+          error: 'ANTHROPIC_API_KEY not configured'
+        });
+      }
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-3-5-sonnet-20241022',
+          max_tokens: 50,
+          messages: [
+            {
+              role: 'user',
+              content: 'Say "Claude API is working!"'
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return res.status(response.status).json({
+          success: false,
+          error: 'Claude API failed',
+          details: errorText,
+          apiKeyLength: process.env.ANTHROPIC_API_KEY.length
+        });
+      }
+
+      const result = await response.json();
+      return res.status(200).json({
+        success: true,
+        message: 'Claude API is working!',
+        response: result.content[0].text,
+        model: result.model,
+        apiKeyLength: process.env.ANTHROPIC_API_KEY.length
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
